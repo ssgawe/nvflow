@@ -1,0 +1,39 @@
+# ============================================================================
+# Generate Questions for Document-Grounded Data Generation Prompt Template
+# ============================================================================
+# Purpose: Generate questions for document-grounded data generation
+#
+# Input Variables:
+#   - document: Financial text extracted from 10-K or 10-Q files
+#
+# Output: JSON object with questions categorized by analysis type
+#
+# Usage: Reference this prompt in your workflow config:
+#   ++prompt_config=nvflow/recipes/finance/prompts/document_grounded_generate_questions.yaml
+# ============================================================================
+
+# User message - Combined instructions and input variables
+user: |-
+  You are a financial expert. You will be provided with financial text extracted from 10-K or 10-Q files.
+  The provided content may come from multiple item sections or multiple companies (typically 1 to 3 sections/documents).
+
+  Your task is to propose the most important questions an analyst should ask based on the provided content.
+
+  Requirements:
+  1. The questions MUST be relevant to ALL provided sections/documents. If multiple sections are provided, the questions should relate to all of them (e.g., via comparison, common trends, or synthesized insights).
+  2. You must generate exactly 3 questions for EACH of the following four categories:
+     - Comparison and Trend Analysis
+     - Ratio Analysis
+     - Risk Factors
+     - Analyst Insights
+  3. Respond ONLY with a valid JSON object. Do not include any other text or markdown formatting.
+
+  Output Format:
+  {{
+    "Comparison_and_Trend_Analysis": ["question 1", "question 2", "question 3"],
+    "Ratio_Analysis": ["question 1", "question 2", "question 3"],
+    "Risk_Factors": ["question 1", "question 2", "question 3"],
+    "Analyst_Insights": ["question 1", "question 2", "question 3"]
+  }}
+
+  Document: {context}

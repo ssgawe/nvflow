@@ -1,0 +1,120 @@
+# Slurm Cluster Configuration Template
+#
+# Copy this file to create your cluster config:
+#   cp cluster_configs/template-slurm.yaml cluster_configs/my_cluster.yaml
+#
+# Then update all <PLACEHOLDER> values with your settings.
+#
+# Reference: https://github.com/NVIDIA/NeMo-Skills
+
+executor: slurm
+
+# =============================================================================
+# Ray Cluster Template (for SLURM compatibility)
+# =============================================================================
+# IMPORTANT: If Ray cluster hangs during initialization, use "ray_enroot.sub.j2"
+#
+# Symptoms indicating you need this fix:
+#   - Ray cluster hangs during initialization
+#   - Error: "execve(): bad interpreter: No such file or directory"
+#   - Workers fail to connect to Ray head node
+#
+# Known affected versions: SLURM 25.x (confirmed on 25.11.2)
+# Known working versions: SLURM 24.x works without this fix
+#
+# Check your SLURM version: scontrol show config | grep SLURM_VERSION
+# Uncomment this line if you experience Ray cluster hangs:
+# ray_template: "ray_enroot.sub.j2"
+
+# =============================================================================
+# SSH Configuration (ONLY for remote job submission from local machine)
+# =============================================================================
+# IMPORTANT:
+#   - If running FROM WITHIN the cluster: Comment out this entire ssh_tunnel section
+#   - If running from LOCAL machine (outside cluster): Uncomment and configure ssh_tunnel
+#
+# ssh_tunnel:
+#   host: <YOUR_CLUSTER_LOGIN_NODE>           # e.g., login.cluster.example.com
+#   user: <YOUR_USERNAME>                      # Your cluster username
+#   job_dir: <PATH_TO_JOB_DIR>                 # e.g., /lustre/users/<username>/nvflow/jobs
+#   identity: <PATH_TO_SSH_KEY>                # e.g., $HOME/.ssh/id_rsa
+
+# =============================================================================
+# Job Directory (REQUIRED in all cases)
+# =============================================================================
+# If ssh_tunnel is used above, this should match the job_dir specified there.
+# If running from within the cluster, this is the only directory config needed.
+job_dir: <PATH_TO_JOB_DIR>                 # e.g., /lustre/users/<username>/nvflow/jobs
+
+# =============================================================================
+# Slurm Account & Partition
+# =============================================================================
+account: <YOUR_SLURM_ACCOUNT>                # Run: sacctmgr show associations user=$USER
+partition: <YOUR_GPU_PARTITION>              # Run: sinfo to see available partitions
+cpu_partition: <YOUR_CPU_PARTITION>          # Optional: CPU-only partition for container setup
+job_name_prefix: "nvflow-"
+
+# =============================================================================
+# Slurm Job Options
+# =============================================================================
+extra_sbatch_args:
+  # - --exclusive                            # Request exclusive node access
+  # - --mem=0                                # Use all available memory
+
+extra_sandbox_args:
+  - --overlap
+
+# =============================================================================
+# Container Paths
+# =============================================================================
+# After converting containers to .sqsh format (see INSTALL.md), paste paths here.
+containers:
+  # Required containers
+  nemo-skills: <PATH_TO_CONTAINERS>/nemo-skills.sqsh
+  vllm: <PATH_TO_CONTAINERS>/vllm.sqsh
+  sglang: <PATH_TO_CONTAINERS>/sglang.sqsh
+  nemo-rl: <PATH_TO_CONTAINERS>/nemo-rl.sqsh
+  # Optional containers (not currently used by NVFlow recipes)
+  # trtllm: <PATH_TO_CONTAINERS>/trtllm.sqsh
+  # megatron: <PATH_TO_CONTAINERS>/megatron.sqsh
+  # sandbox: <PATH_TO_CONTAINERS>/sandbox.sqsh
+  # verl: <PATH_TO_CONTAINERS>/verl.sqsh
+
+# =============================================================================
+# Mount Points
+# =============================================================================
+# Map cluster paths to container paths
+mounts:
+  - <CLUSTER_PATH_TO_HF_MODELS>:/hf_models   # HuggingFace models
+  - <CLUSTER_PATH_TO_WORKSPACE>:/workspace   # Your workspace
+  # Add more mounts as needed:
+  # - /lustre/data:/data
+
+# =============================================================================
+# Timeouts (per partition)
+# =============================================================================
+timeouts:
+  <YOUR_GPU_PARTITION>: "04:00:00"
+  <YOUR_CPU_PARTITION>: "04:00:00"
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+# HF_HOME is required and must be a mounted path
+env_vars:
+  - HF_HOME=<MOUNTED_PATH>/cache/huggingface
+  - NCCL_DEBUG=INFO
+  - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+  - CUDA_DEVICE_MAX_CONNECTIONS=1
+  - VIRTUAL_ENV=  # Unset to prevent host venv from interfering with container
+  - VIRTUAL_ENV_PROMPT=  # Unset venv prompt
+  # API keys (keep these secret, don't commit to git!)
+  # - HF_TOKEN=<YOUR_HF_TOKEN>
+  # - WANDB_API_KEY=<YOUR_WANDB_KEY>
+  # - OPENAI_API_KEY=<YOUR_OPENAI_KEY>
+
+# =============================================================================
+# Email Notifications (optional)
+# =============================================================================
+# mail_type: FAIL
+# mail_user: <YOUR_EMAIL>

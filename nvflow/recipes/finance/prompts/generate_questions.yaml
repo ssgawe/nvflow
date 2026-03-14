@@ -1,0 +1,31 @@
+# prompt_type: "generate_questions"
+# task: "Generate questions from SECQUE questions - by modifying company, year and returning the modified year and company in the output"
+
+system: |
+   I will give you a question, company A, company B and a year.
+
+   Change the question by changing the 2 companies mentioned to company A and company B, if there is only one company mentioned change it to company A.
+
+   Change the year in the question to the year I'm giving you, if there is more than one year in the question, change the largest year to the year
+   I'm giving you and modify the other years by the difference between the original year to the new year, so that the question still makes sense.
+
+   Finally paraphrase the question while keeping the meaning and generate no more than 3 questions from it. Make sure each question is different from each other (and the original), are fluent in English and also make sense as sensible questions.
+
+   Output ONLY valid JSON in this exact format:
+   {{
+      "questions": [
+         "paraphrased question 1",
+         "paraphrased question 2",
+         "paraphrased question 3"
+      ]
+   }}
+
+   No additional text, explanations, or formatting.
+
+   If you are not able to extract a company from the original question, return an empty list (because there is no way to generate a new question).
+
+user: |
+  Original Question: {original_question}
+  Company A: {company_a}
+  Company B: {company_b}
+  Year: {year}

@@ -1,0 +1,111 @@
+[project]
+name = "nvflow"
+dynamic = ["version"]  # Version determined from git tags via hatch-vcs
+description = "Workflow orchestration for end-to-end model training on NeMo ecosystem"
+authors = [
+    {name = "Your Team", email = "team@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    # NeMo-Skills for cluster job submission (brings ~200+ dependencies)
+    # This is the core framework we orchestrate - list it first for clarity
+    # Pinned to specific commit for reproducibility (nemo-skills doesn't use version tags)
+    # Pinned on: 2026-02-08 | Commit: 7d6c49a5 (latest main, includes extra_body dict fix #1195)
+    # To update: Find commit with containers in cluster_configs/example-slurm.yaml
+    "nemo-skills @ git+https://github.com/NVIDIA/NeMo-Skills.git@7d6c49a51efb441b61db3e78f6ffa2f04c9a68ef",
+
+    # Configuration & Workflow
+    "omegaconf>=2.3.0",      # YAML config loading with variable interpolation
+
+    # CLI Interface
+    "typer>=0.9.0",          # CLI framework (includes click as dependency)
+    "rich>=13.0.0",          # Pretty terminal output and tables
+
+    # Data handling
+    "jsonlines>=4.0.0",      # JSONL file reading/writing
+
+    # BDSA vulnerability fixes (transitive dependency pins)
+    "gradio>=6.9.0",
+    "Pillow>=12.1.1",
+    # urllib3>=2.6.3 blocked by torchx<1.27 constraint (via nemo-skills → nemo-run → torchx)
+
+    # Note: Heavy dependencies (torch, transformers, etc.) come from nemo-skills
+    # Actual compute happens on Slurm cluster inside containers
+]
+
+[project.optional-dependencies]
+# Development tools (testing, linting, formatting, docs)
+dev = [
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.3.0",
+    "pytest-timeout>=2.2.0",
+
+    # Code quality
+    "pre-commit>=3.5.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "types-PyYAML",
+]
+
+[project.scripts]
+nflow = "nvflow.cli.main:app"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "nvflow/_version.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatchling.build.targets.wheel]
+packages = ["nvflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+# Disable strict checks for OmegaConf (dynamic config library)
+[[tool.mypy.overrides]]
+module = "nvflow.*"
+disable_error_code = ["index", "call-overload", "union-attr", "arg-type", "no-any-return", "attr-defined", "assignment", "operator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --cov=nvflow --cov-report=html --cov-report=term-missing"
+timeout = 300
+
+[tool.uv]
+managed = true
+override-dependencies = [
+    "urllib3>=2.6.3",
+]
+
+[dependency-groups]
+dev = [
+    "pudb>=2025.1.3",
+]

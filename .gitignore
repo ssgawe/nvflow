@@ -1,0 +1,101 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Auto-generated version file (from hatch-vcs)
+nvflow/_version.py
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+!nvflow/lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# UV
+.uv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data and outputs (customize based on your needs)
+/data
+/data/
+!data/.gitkeep
+models
+models/
+!models/.gitkeep
+outputs
+outputs/
+!outputs/.gitkeep
+!outputs/logs/.gitkeep
+containers
+containers/
+!containers/.gitkeep
+results/
+logs/
+*.log
+filings*/
+
+# Example recipe - keep sample input data, ignore outputs
+nvflow/recipes/*/data/*
+!nvflow/recipes/*/data/input/
+nvflow/recipes/*/data/input/*
+!nvflow/recipes/example/data/input/data.jsonl
+
+# Finance datasets - ignore prepared data (eval.jsonl, stats), keep code
+nvflow/recipes/finance/datasets/*/eval.jsonl
+nvflow/recipes/finance/datasets/*/eval_stats.json
+nvflow/recipes/finance/datasets/*/train.jsonl
+nvflow/recipes/finance/datasets/*/test.jsonl
+nvflow/recipes/finance/datasets/finance_agent/*.jsonl
+nvflow/recipes/finance/datasets/finance_agent/*.csv
+nvflow/recipes/finance/datasets/finance_agent/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Secrets
+.env
+*.key
+*.pem
+credentials.yaml
+private_*.yaml
+
+# Cluster configs (only track containers.yaml and template-slurm.yaml)
+cluster_configs/*.yaml
+!cluster_configs/containers.yaml
+!cluster_configs/template-slurm.yaml

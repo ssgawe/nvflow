@@ -1,0 +1,44 @@
+nvflow
+Copyright (c) 2025 NVIDIA CORPORATION. All rights reserved.
+
+This project is licensed under the Apache License, Version 2.0 (the "License").
+See the LICENSE file for the full license text.
+
+Each NVIDIA-authored source file in this repository includes the NVIDIA copyright
+and the Apache License 2.0 notice. SPDX short identifiers may be used in lieu of
+the full notice for NVIDIA-authored code per Annex E of the SPDX specification:
+https://spdx.github.io/spdx-spec/v2.3/using-SPDX-short-identifiers-in-source-files/
+
+=============================================================================
+Third-Party Components and Licenses
+=============================================================================
+
+This software uses or depends on the following third-party open source
+components. Their respective licenses apply to their use in this project.
+For full license texts, see the links below or the documentation of each
+component.
+
+  - nemo-skills (NVIDIA NeMo-Skills)
+    https://github.com/NVIDIA/NeMo-Skills
+    License: Apache-2.0
+
+  - omegaconf
+    https://github.com/omry/omegaconf
+    License: BSD-3-Clause
+
+  - typer
+    https://github.com/tiangolo/typer
+    License: MIT
+
+  - rich
+    https://github.com/Textualize/rich
+    License: MIT
+
+  - jsonlines
+    https://github.com/wbolster/jsonlines
+    License: BSD-3-Clause
+
+Additional dependencies may be brought in by the above (e.g., nemo-skills
+has its own dependency tree). When distributing this project or derivatives,
+ensure compliance with all applicable third-party licenses. See each
+package's distribution or source repository for full license text.

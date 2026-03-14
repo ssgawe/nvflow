@@ -1,0 +1,7 @@
+# Placeholder for finance-specific prompts
+#
+# Add your prompt YAML files here:
+# - generate_qas.yaml
+# - generate_solution.yaml
+# - mcqa_to_shortqa.yaml
+# - validate_shortqa.yaml

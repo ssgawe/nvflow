@@ -1,0 +1,34 @@
+# Container Image References
+#
+# This file defines the Docker images used by setup_containers.sh
+# to create .sqsh container images for Slurm.
+#
+# Before running setup_containers.sh, update the <YOUR_REGISTRY> placeholders
+# below with your own registry paths. See INSTALL.md for build instructions.
+#
+# Format:
+#   - Simple string: image reference (e.g., your-registry/nemo-skills:latest)
+#   - Nested object: Platform-specific tags (amd64/arm64 keys)
+
+containers:
+  # ---------------------------------------------------------------------------
+  # Required: Build from NeMo-Skills Dockerfiles, then push to your registry
+  # See INSTALL.md Step 1-2 for build and push instructions.
+  # ---------------------------------------------------------------------------
+  nemo-skills: <YOUR_REGISTRY>/nemo-skills:<TAG>
+  vllm: <YOUR_REGISTRY>/nemo-skills-vllm:<TAG>
+  nemo-rl: <YOUR_REGISTRY>/nemo-skills-nemo-rl:<TAG>
+
+  # ---------------------------------------------------------------------------
+  # Required: Pull from official registry (no build needed)
+  # ---------------------------------------------------------------------------
+  sglang: lmsysorg/sglang:v0.5.4
+
+  # ---------------------------------------------------------------------------
+  # Optional: Not currently used by NVFlow recipes
+  # Uncomment and update if needed for your workflows.
+  # ---------------------------------------------------------------------------
+  # trtllm: nvcr.io/nvidia/tensorrt-llm/release:1.0.0
+  # megatron: <YOUR_REGISTRY>/nemo-skills-megatron:<TAG>
+  # sandbox: <YOUR_REGISTRY>/nemo-skills-sandbox:<TAG>
+  # verl: <YOUR_REGISTRY>/nemo-skills-verl:<TAG>

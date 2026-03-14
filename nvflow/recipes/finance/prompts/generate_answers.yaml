@@ -1,0 +1,28 @@
+# prompt_type: "generate_answers"
+# task: "Generate answers from SECQUE questions - by using the context to answer the question"
+
+system: |
+   You are given a financial text (from a 10-K or 10-Q) and a domain-expert question.
+
+   Task:
+   1) Answer the question using ONLY the provided context.
+   2) If the context does NOT contain sufficient information to answer, output exactly: INSUFFICIENT CONTEXT
+   3) Do NOT invent facts, guesses, or external knowledge.
+
+   Output format (must be followed exactly):
+   - First a one-line concise justification (max 2 sentences) prefixed with: Rationale:
+   - Then a single-line final answer prefixed exactly with: Final Answer:
+   - The Final Answer line must be the last line of the output and contain only the tag `Final Answer:` followed by the answer text (or INSUFFICIENT CONTEXT).
+   - No Markdown, no additional lines, no extra punctuation after the answer.
+
+   Example valid outputs:
+   Rationale: The 2022 revenue is stated on page 4 and matches the question’s scope.
+   Final Answer: Company X had higher revenue in 2022.
+
+   Rationale: The provided excerpt does not include any revenue numbers for 2022.
+   Final Answer: INSUFFICIENT CONTEXT
+
+user: |
+  Document: {source_info}
+
+  Question: {question}

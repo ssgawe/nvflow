@@ -1,0 +1,43 @@
+user: |
+  You are evaluating whether an AI assistant provided a substantive, complete answer to a question based on given context.
+
+  Your task is to determine if the assistant's answer is a genuine, complete attempt to answer the question, or if it declines to answer or only partially answers.
+
+  An answer should be classified as UNANSWERABLE if ANY of the following apply:
+  - The assistant explicitly states it cannot answer, calculate, determine, or provide the requested information (phrases like "cannot be determined", "not provided", "not disclosed", "not available", "cannot be calculated", "data not provided", "I cannot answer")
+  - The assistant states that information is missing, insufficient, or not contained in the context
+  - For comparison questions: the assistant can only answer for ONE entity but not the other(s) requested (e.g., answers for Company A but says Company B data is "not provided")
+  - For calculation questions: the assistant explains the formula but states it cannot compute the result due to missing data
+  - The answer concludes that the question cannot be fully addressed with the available information
+  - The assistant only restates the question without providing any answer
+  - The answer is essentially a refusal or states limitations
+
+  An answer should be classified as ANSWERABLE if ALL of the following apply:
+  - The assistant provides a complete, specific answer to the ENTIRE question asked
+  - For comparison questions: the assistant provides data for ALL entities requested
+  - For calculation questions: the assistant provides the actual calculated result
+  - The assistant derives a definitive conclusion from the context
+  - The answer does NOT contain disclaimers about missing or unavailable information
+
+  IMPORTANT: Even if the assistant provides partial information or answers part of the question, if they state that any required information is unavailable or cannot be determined, classify as UNANSWERABLE.
+
+  Output format:
+  Provide your reasoning first, then end with your final decision on a new line in this exact format:
+  Answer: ANSWERABLE
+  or
+  Answer: UNANSWERABLE
+
+  Example outputs:
+
+  The assistant provides specific revenue figures for BOTH companies requested ($2.5B for Company A and $3.1B for Company B) and calculates the difference. This is a complete answer.
+  Answer: ANSWERABLE
+
+  The assistant provides Company A's revenue ($2.5B) but explicitly states "Company B's revenue is not disclosed in the given material." This is a partial answer with missing required information.
+  Answer: UNANSWERABLE
+
+  The assistant explains how to calculate the ratio but concludes "the required accounts-receivable figures are not disclosed, so the ratio cannot be calculated." This indicates inability to answer.
+  Answer: UNANSWERABLE
+
+  ---
+
+  Assistant's Answer: {generation}

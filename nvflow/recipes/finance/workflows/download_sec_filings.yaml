@@ -1,0 +1,47 @@
+# Finance SDG Pipeline - SEC Filing Download
+# Download SEC filings using separate config files for tickers/years/forms
+
+recipe: finance
+
+workflow:
+  name: "download-sec"
+  type: "sdg"
+  description: "Download SEC filings with configurable ticker sets"
+
+cluster: my_cluster
+
+output_dir: /workspace/outputs/finance
+
+pipeline_stages:
+  - demo
+  - sap-500
+
+stages:
+
+  # Demo stage: 7 companies for quick testing
+  demo:
+    output_dir: ${output_dir}/demo/workflow-2-download-sec/step-0-download
+    config: nvflow/recipes/finance/configs/demo.yaml
+    sec_identity_email: your.email@email.com  # UPDATE: Your email (required by SEC)
+    sec_identity_company: YourCompany         # UPDATE: Your company name
+    dependencies: []
+    stage_kwargs:
+      installation_command: >-
+        pip install -q --root-user-action=ignore
+        edgartools sec-parser pandas pyarrow tqdm httpx tzdata &&
+        ln -sfn $(python -c "import tzdata; print(tzdata.__path__[0])")/zoneinfo
+        /usr/share/zoneinfo 2>/dev/null || true
+
+  # Production stage: Full S&P 500
+  sap-500:
+    output_dir: ${output_dir}/sap-500/workflow-2-download-sec/step-0-download
+    config: nvflow/recipes/finance/configs/sp500.yaml
+    sec_identity_email: your.email@email.com  # UPDATE: Your email (required by SEC)
+    sec_identity_company: YourCompany         # UPDATE: Your company name
+    dependencies: []
+    stage_kwargs:
+      installation_command: >-
+        pip install -q --root-user-action=ignore
+        edgartools sec-parser pandas pyarrow tqdm httpx tzdata &&
+        ln -sfn $(python -c "import tzdata; print(tzdata.__path__[0])")/zoneinfo
+        /usr/share/zoneinfo 2>/dev/null || true

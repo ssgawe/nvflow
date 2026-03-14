@@ -1,0 +1,171 @@
+recipe: finance
+
+workflow:
+  name: "document_grounded_sdg"
+  type: "sdg"
+  description: "generate synthetic finance data grounded on documents"
+
+cluster: my_cluster
+
+# Repo is mounted at /workspace on cluster (see cluster_configs/aws.yaml)
+base_data_dir: /workspace/outputs/finance/demo/workflow-3-document-grounded-sdg
+filings_dir: /workspace/outputs/finance/demo/workflow-2-download-sec/step-0-download
+
+pipeline_stages:
+  - dg_sdg_preprocess            # Preprocess: sec filing -> chunk data -> JSONL data
+  - generate_verified_qa         # Combined: Q(prep+gen+prep+verify) + A(prep+gen)
+  - genselect_answers
+  - evaluate_answers
+  - aggregate_answers          # Aggregate 5 evaluation results
+  - difficulty_estimation      # Estimate difficulty using small model
+  - dgsdg_post_process      # Post process document grounded sdg data
+
+stages:
+  # SEC Filing Preprocessing: Convert raw HTML to structured JSONL
+  dg_sdg_preprocess:
+    # Input: Raw SEC filings directory (contains 10-K and 10-Q HTML files)
+    input_dir: ${filings_dir}/data
+    # Output: Preprocessed data directory
+    output_dir: ${base_data_dir}/step-0-preprocess
+    # Distribution files for sampling (contains 10k/10q distribution CSVs, we have distribution files follow secque benchmark analysis in the repo)
+    distribution_dir: /workspace/nvflow/recipes/finance/workflows/sdg/dg_sdg_distribution
+    dependencies: []
+
+    # Chunking settings
+    max_tokens: 3000 # max token per chunk, used to control the size of each chunk
+    overlap_tokens: 500 # overlap tokens between chunks, used to control the coverage of full context
+
+    # Sampling settings
+    total_samples: 150000 # total samples generated following distribution
+    max_skip_count: 20000 # we are doing a non-repeatable sampling, we will stop sampling if we have skipped more than this number of samples
+    seed: 42
+
+
+  # Combined question and answer generation stage (renamed for clarity)
+  generate_verified_qa:
+    input_folder: ${base_data_dir}/step-0-preprocess/jsonl
+    output_dir: ${base_data_dir}/step-1-qa-pipeline
+    dependencies: [dg_sdg_preprocess]
+
+
+    # Question generation settings
+    question_generation_kwargs:
+      args:
+        model: /hf_models/openai/gpt-oss-120b # Update your model path
+        server_type: vllm
+        server_gpus: 8
+        server_nodes: 1
+        num_random_seeds: 1
+        num_chunks: 1
+        skip_filled: True
+      ctx_args: >-
+        ++prompt_config=nvflow/recipes/finance/prompts/document_grounded_generate_questions.yaml
+        ++inference.temperature=0.9
+        ++inference.top_p=0.9
+        ++chat_template_kwargs.reasoning_effort=high
+
+    # Question verification settings
+    question_verify_kwargs:
+      args:
+        model: /hf_models/Qwen/Qwen3-235B-A22B-Instruct-2507 # Update your model path
+        server_type: vllm
+        server_gpus: 8
+        server_nodes: 1
+        num_random_seeds: 5
+        num_chunks: 1
+        skip_filled: True
+      ctx_args: >-
+        ++prompt_config=nvflow/recipes/finance/prompts/document_grounded_verify_questions.yaml
+        ++inference.temperature=0.1
+        ++inference.top_p=0.1
+
+    # Answer Preprocessing settings
+    answer_preprocess_kwargs:
+      threshold: 1
+
+    # Answer generation settings
+    answer_generation_kwargs:
+      args:
+        model: /hf_models/openai/gpt-oss-120b
+        server_type: vllm
+        server_gpus: 8
+        server_nodes: 1
+        num_chunks: 1
+        num_random_seeds: 5
+      ctx_args: >-
+        ++prompt_config=nvflow/recipes/finance/prompts/secque_template.yaml
+        ++chat_template_kwargs.reasoning_effort=high
+
+  genselect_answers:
+    input_dir: ${base_data_dir}/step-1-qa-pipeline/answer_pipeline/generated
+    output_file: ${base_data_dir}/step-2-genselect/selected_answers.jsonl
+    prompt_config: nvflow/recipes/finance/prompts/genselect_answers.yaml
+    inline_args: "++inference.tokens_to_generate=16384"
+    dependencies: [generate_verified_qa]
+    stage_kwargs:
+      model: /hf_models/Qwen/Qwen3-235B-A22B-Instruct-2507
+      server_type: vllm
+      server_gpus: 8
+      server_nodes: 1
+      num_chunks: 5
+
+  evaluate_answers:
+    input_file: ${base_data_dir}/step-2-genselect/selected_answers.jsonl
+    output_dir: ${base_data_dir}/step-3-evaluate
+    prompt_config: nvflow/recipes/finance/prompts/evaluate_answers.yaml
+    inline_args: "++generation_key=evaluate_generation ++inference.top_p=0.9 ++inference.temperature=0.8"
+    dependencies: [genselect_answers]
+    stage_kwargs:
+      model: /hf_models/Qwen/Qwen3-235B-A22B-Instruct-2507
+      server_type: vllm
+      server_gpus: 8
+      server_nodes: 1
+      num_chunks: 1
+      num_random_seeds: 5
+
+  aggregate_answers:
+    input_dir: ${base_data_dir}/step-3-evaluate
+    output_file: ${base_data_dir}/step-4-aggregate/aggregated_answers.jsonl
+    dependencies: [evaluate_answers]
+
+
+  difficulty_estimation:
+    input_file: ${base_data_dir}/step-4-aggregate/aggregated_answers.jsonl
+    output_file: ${base_data_dir}/step-5-difficulty/answers_with_difficulty.jsonl
+    work_dir: ${base_data_dir}/step-5-difficulty
+    num_random_seeds: 5
+    dependencies: [aggregate_answers]
+
+
+    # Small model for answering (Qwen3-4B)
+    answer_model_kwargs:
+      args:
+        model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
+        server_type: vllm
+        server_gpus: 8
+        server_nodes: 1
+        num_chunks: 5
+      ctx_args: >-
+        ++prompt_config=nvflow/recipes/finance/prompts/secque_template.yaml
+        ++inference.temperature=0.7
+
+    answer_prompt_config: nvflow/recipes/finance/prompts/secque_template.yaml
+
+    # Large model for judging (GPT-OSS120)
+    judge_model_kwargs:
+      args:
+        model: /hf_models/openai/gpt-oss-120b
+        server_type: vllm
+        server_gpus: 8
+        server_nodes: 1
+        num_chunks: 1
+      ctx_args: >-
+        ++inference.temperature=0.1
+
+    judge_prompt_config: nvflow/recipes/finance/prompts/judge_difficulty.yaml
+
+  dgsdg_post_process:
+    input_file: ${base_data_dir}/step-5-difficulty/answers_with_difficulty.jsonl
+    output_dir: ${base_data_dir}/step-6-post-process
+    seed: 42
+    dependencies: [difficulty_estimation]

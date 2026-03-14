@@ -1,0 +1,30 @@
+# ============================================================================
+# Financial Q&A Prompt Template for NVIDIA Nemotron-Nano-v2 (No Reasoning)
+# ============================================================================
+# Purpose: Disables reasoning mode for Nemotron-Nano-v2 when testing
+#          without thinking traces
+#
+# Usage: For reasoning ON, use secque_template.yaml (reasoning is default)
+#        For reasoning OFF, use this template (nemotron_nanov2_no_think.yaml)
+#
+# Reference: https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2
+# ============================================================================
+
+# System message - disables reasoning mode for Nemotron
+system: "/no_think"
+
+# User message - same as secque_template
+user: |
+  You are given a financial text extracted from 10-K or 10-Q files and a question written by domain experts. Your task is to answer the question based only on the provided context. Do not use any additional context. Your answer should be concise and accurate. In case you are unable to answer the question, you should state that you can't answer the question. Do not guess and do not suggest your own solutions.
+
+  Input:
+  • Document: {context}
+  • Question: {problem}
+
+  Output:
+  • Think through the problem step by step if needed
+  • Conclude with your final answer prefixed by "Answer:"
+
+  Example format:
+  [Your reasoning here]
+  Answer: [Your concise answer]

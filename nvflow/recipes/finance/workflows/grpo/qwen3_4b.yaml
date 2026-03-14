@@ -1,0 +1,212 @@
+# ============================================================================
+# Qwen3-4B GRPO Training Configuration
+# ============================================================================
+# GRPO RL training for Qwen3-4B-Instruct using NeMo-Gym equivalence_llm_judge.
+# Inherits shared pipeline logic from base.yaml and provides all Qwen3-4B
+# specific settings (model paths, parallelism, etc.)
+#
+# Usage:
+#   uv run nflow run-all --config nvflow/recipes/finance/workflows/grpo/qwen3_4b.yaml
+#
+# Data:
+#   data_transformation cleans raw SDG data, apply_prompt_template formats
+#   the prompt and extracts expected answer, convert_to_responses_api converts
+#   to NeMo-Gym format, train_validation_split splits into train/val, and
+#   prepare_data adds agent_ref routing fields.  All paths are auto-wired.
+#
+# Environment:
+#   Default: equivalence_llm_judge (configurable via overrides.env.nemo_gym)
+# ============================================================================
+
+# Inherit base GRPO workflow
+_base_: base.yaml
+
+# Model-specific output directory
+base_output_dir: /workspace/outputs/finance/demo/workflow-5-grpo/qwen3_4b
+
+# ============================================================================
+# Shared Anchors (define once, reuse across stages)
+# ============================================================================
+# GPT-OSS-120B as dedicated judge (MoE, fits on 4 GPUs).
+# Used by collect_rollouts, compute_rewards, and training stages.
+_judge_vllm: &judge_vllm
+  model_path: /hf_models/openai/gpt-oss-120b
+  num_gpus: 4
+  server_nodes: 1
+  max_model_len: 65536
+  async_scheduling: true
+  uses_reasoning_parser: true
+
+# ============================================================================
+# Model-Specific Stage Overrides
+# ============================================================================
+
+stages:
+
+  # --------------------------------------------------------------------------
+  # Data Transformation: SDG cleanup (shared)
+  # --------------------------------------------------------------------------
+  # For demo: use the same raw SDG data as SFT.
+  data_transformation:
+    input_files:
+      - /workspace/outputs/finance/demo/workflow-3-template-based-sdg/step-5-filter-answers/final_result.jsonl
+    source_format: separated
+    reasoning_mode: none
+
+  # --------------------------------------------------------------------------
+  # Apply Prompt Template: format prompt + extract expected answer
+  # --------------------------------------------------------------------------
+  # Uses secque_template.yaml (same prompt as SFT training).
+  # Extracts concise answer after "Answer:" for cleaner judge evaluation.
+  # To use a different prompt, override prompt_template here.
+  # apply_prompt_template:
+  #   prompt_template: /workspace/nvflow/recipes/finance/prompts/other_template.yaml
+
+  # --------------------------------------------------------------------------
+  # Convert to Responses API: lossless format conversion
+  # --------------------------------------------------------------------------
+  # Input: apply_prompt_template output (prompted SDG format).
+  # Output: Responses API format with all original fields preserved.
+  # (uses base.yaml defaults -- no overrides needed)
+
+  # --------------------------------------------------------------------------
+  # Baseline Rollouts: Qwen3-4B configuration
+  # --------------------------------------------------------------------------
+  collect_rollouts:
+    rollout:
+      num_random_seeds: 8
+
+      policy_vllm:
+        model_path: /hf_models/Qwen/Qwen3-4B
+        num_gpus: 2
+        server_nodes: 1
+        max_model_len: 32768
+
+      judge_vllm: *judge_vllm
+
+  # --------------------------------------------------------------------------
+  # Compute Rewards: re-judge with GPT-OSS-120B (optional)
+  # --------------------------------------------------------------------------
+  # Re-judges existing rollouts using GPT-OSS-120B.  Useful when
+  # collect_rollouts ran with a different (e.g. weaker) judge and you
+  # want to recompute rewards without regenerating model responses.
+  #
+  # Currently disabled in pipeline_stages (collect_rollouts already uses
+  # the finance judge).  To enable: uncomment "compute_rewards" above.
+  compute_rewards:
+    rejudge:
+      judge_vllm: *judge_vllm
+
+  # Alternative judge configurations (uncomment one to switch):
+  #
+  # OpenAI API judge (API key from $OPENAI_API_KEY in container env):
+  # compute_rewards:
+  #   rejudge:
+  #     judge_vllm:
+  #       num_gpus: 0
+  #       openai_base_url: "https://api.openai.com/v1"
+  #       openai_model: "gpt-4o"
+  #
+  # Local vLLM judge:
+  # compute_rewards:
+  #   rejudge:
+  #     judge_vllm:
+  #       num_gpus: 4
+  #       model_path: /hf_models/Qwen/Qwen3-30B-A3B-Instruct-2507
+
+  # --------------------------------------------------------------------------
+  # Training: Qwen3-4B GRPO configuration
+  # --------------------------------------------------------------------------
+  training:
+    model_name: Qwen/Qwen3-4B
+    hf_checkpoint_path: /hf_models/Qwen/Qwen3-4B
+
+    # Backend: fsdp (DTensor) or megatron.
+    # To switch to megatron, change this to "megatron" and swap the
+    # parallelism block below (dtensor_cfg → megatron_cfg).
+    backend: fsdp
+
+    # Cluster configuration for 4B model
+    num_nodes: 1              # 1 node x 8 GPUs = 8 GPUs (demo)
+    dependent_jobs: 0         # No dependent jobs for demo
+
+    # Same judge as collect_rollouts (defined via anchor above).
+    # Modes: local_vllm (model_path), external_vllm (base_url),
+    #        openai (openai_base_url), policy_as_judge (omit judge_vllm).
+    judge_vllm: *judge_vllm
+
+    # Use base preset with model-specific overrides
+    preset: "grpo-base"
+
+    # Qwen3-4B specific configuration (only non-default values)
+    # For demo runs, reduce max_num_steps (e.g. 2) and use max_num_samples
+    # in collect_rollouts to limit the dataset size.
+    overrides:
+      grpo:
+        num_prompts_per_step: 16
+        num_generations_per_prompt: 8
+        max_num_steps: 20
+        val_period: 10
+
+      checkpointing:
+        save_period: 10
+
+      policy:
+        tokenizer:
+          name: ${stages.training.hf_checkpoint_path}
+        # Batch size = num_prompts_per_step * num_generations_per_prompt = 16 * 8 = 128
+        train_global_batch_size: 128
+
+        # Parallelism: TP=2 and activation_checkpointing are in the preset.
+        # Override here only if this model needs different values.
+        #
+        # Megatron backend (set backend: megatron above, then uncomment):
+        # megatron_cfg:
+        #   enabled: true
+        #   tensor_model_parallel_size: 2
+        #   pipeline_model_parallel_size: 1
+        #   context_parallel_size: 1
+        #   activation_checkpointing: true
+        #   converter_type: "Qwen2ForCausalLM"
+        # dtensor_cfg:
+        #   enabled: false
+
+      # Logger
+      logger:
+        wandb:
+          name: "grpo-qwen3-4b"
+
+      # Environment: equivalence_llm_judge (default from preset).
+      # Judge model: configured via judge_vllm above (GPT-OSS-120B).
+      # To change environment, override env.nemo_gym.config_paths here:
+      # env:
+      #   nemo_gym:
+      #     config_paths:
+      #       - responses_api_models/vllm_model/configs/vllm_model_for_training.yaml
+      #       - resources_servers/your_custom_env/configs/your_custom_env.yaml
+
+  # --------------------------------------------------------------------------
+  # Stage 8: Evaluate Checkpoints - Qwen3-4B GRPO
+  # --------------------------------------------------------------------------
+  eval:
+    eval_steps: [20]
+    checkpoint_path: ${directories.step-7-training}
+    base_output_dir: ${base_output_dir}
+    eval_output_dir: ${base_output_dir}/step-8-eval
+    format: fsdp  # DCP→HF conversion at eval time (same pattern as Megatron)
+    server_type: vllm
+    gpus: 1
+    # Demo: only SecQUE and FinanceBench (skip finance_agent to save time)
+    benchmarks:
+      secque:
+        seeds: 5
+      financebench:
+        seeds: 5
+    inference_args: >-
+      ++prompt_config=/workspace/nvflow/recipes/finance/prompts/secque_template.yaml
+      ++inference.temperature=0.6
+      ++inference.top_p=0.95
+      ++inference.top_k=20
+      ++inference.tokens_to_generate=16384
+      ++chat_template_kwargs.enable_thinking=true
+    server_args: "--max-model-len 40960 --async-scheduling --reasoning-parser qwen3"

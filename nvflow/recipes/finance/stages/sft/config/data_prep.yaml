@@ -1,0 +1,56 @@
+processors_to_run: all
+
+output_path: ???
+prompt_config: null
+
+preprocessed_dataset_files: null  # can specify multiple patters separated by space
+input_files: null  # can specify datasets from HF instead of prediction_jsonl_files
+
+exclude_optional_keys: false # exclude keys other than input, output and expected_answer from the final manifest
+metadata: null  # can provide additional metadata to store (e.g. dataset or generation_type)
+skip_first: 0  # useful for skipping validation set from train_full generation (it's always first)
+add_correct: true  # can set to False if only want to export incorrect solutions
+add_incorrect: true  # if True, saves only incorrect solutions instead of correct
+add_unlabeled: true  # if True, saves unlabeled solutions (no symbolic_correct field)
+use_judgement: false  # if True, uses judgement instead of symbolic_correct field
+
+# Needed to format the data and also for length-based filtering
+tokenizer: null
+chat_template_kwargs: null
+system_message: null  # can be used to override default from the tokenizer
+assistant_end: null  # can be used to not use jinja and just add this suffix
+
+input_key: problem
+output_key: generation
+
+deduplicate: true
+
+processors:
+  - _target_: nemo_skills.training.data_preparation_utils.preprocessing.ReadData
+    preprocessed_dataset_files: ${preprocessed_dataset_files}
+    input_files: ${input_files}
+    input_key: ${input_key}
+    output_key: ${output_key}
+    skip_first: ${skip_first}
+    add_correct: ${add_correct}
+    add_incorrect: ${add_incorrect}
+    add_unlabeled: ${add_unlabeled}
+    use_judgement: ${use_judgement}
+    deduplicate: ${deduplicate}
+    keys_to_keep: # input/output/symbolic_correct/judgement are automatically added
+      - uuid
+      - context  # Needed for prompt template formatting
+      - question_type
+      - problem  # Keep raw question text
+
+  - _target_: nemo_skills.training.data_preparation_utils.preprocessing.WriteFinalSftManifest
+    output_manifest_file: ${output_path}
+    prompt_config: ${prompt_config}
+    tokenizer: ${tokenizer}
+    chat_template_kwargs: ${chat_template_kwargs}
+    system_message: ${system_message}
+    assistant_end: ${assistant_end}
+    input_key: ${input_key}
+    output_key: ${output_key}
+    metadata: ${metadata}
+    exclude_optional_keys: ${exclude_optional_keys}

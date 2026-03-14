@@ -1,0 +1,42 @@
+user: |-
+  You will be given a financial question with context, followed by {num_solutions} candidate solutions (indexed 0-{max_idx}). Systematically analyze these solutions to identify the most accurate answer based on the provided context.
+
+  Evaluate solutions on:
+
+  Numerical Accuracy:
+    - Are calculations correct and derived from context data?
+    - Rounding differences alone are acceptable
+  Financial Methodology:
+    - Use formulas and metrics appropriate for the company's industry
+    - Financial institutions (banks, investment firms) may require different methodologies than non-financial companies
+  Fiscal Year Interpretation:
+    - **CRITICAL**: Fiscal year labels vary by convention. A period ending Jan 2024 can validly be called either "FY2024" (ending) or "2023" (majority months).
+    - When a question asks for years X and X-1, and context shows fiscal periods ending in X+1 and X:
+      * These ARE the requested years under majority-year labeling
+      * Do not conclude data is missing simply because filing labels differ by 1 year
+    - Example: Question asks "2023 and 2022", context shows periods ending Jan 2024 and Jan 2023
+      * Period ending Jan 2024 → "2023" (most months in 2023) ✓
+      * Period ending Jan 2023 → "2022" (most months in 2022) ✓
+      * Both years ARE answerable
+    - Try both interpretations: if one makes BOTH years answerable and the other makes only one or neither answerable, use the interpretation that answers the complete question
+  Logical Reasoning:
+    - Is the step-by-step reasoning sound and complete?
+    - Does the solution properly extract and apply relevant context information? Or does it correctly identify that the context does not help answer the question?
+    - Does the conclusion follow logically from the calculations and reasoning?
+
+  Compare solutions on: accuracy relative to context, completeness of reasoning, proper interpretation of financial concepts, and robustness of methodology.
+
+  Your response should analyze conflicting answers, evaluate the most accurate solutions, justify eliminating incorrect ones, and explain your selection. Be objective - base judgment solely on correctness according to context.
+
+  End your evaluation with exactly:
+  Judgment: [IDX]
+
+  where IDX is the index 0-{max_idx} of the best solution.
+  Example: If Solution 2 (index 2) is best, write: "Judgment: 2" at the end.
+  Important: Use only the format "Judgment: 2" with no special formatting, quotes, or additional characters.
+  You must only output a number between 0 and {max_idx} and not outside this range.
+
+  Context: {context}
+  Problem: {problem}
+  Solutions:
+  {solutions}

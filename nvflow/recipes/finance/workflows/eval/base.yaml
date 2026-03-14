@@ -1,0 +1,88 @@
+# ============================================================================
+# Finance Evaluation - Shared Configuration
+# ============================================================================
+# Shared settings for all evaluation contexts: standalone baselines, embedded
+# SFT checkpoint eval, and embedded GRPO checkpoint eval.
+#
+# This file is NOT a workflow — it has no recipe/workflow/pipeline_stages.
+# It is loaded at runtime by the EmbeddedEvalStage and inherited by
+# eval/baselines.yaml (the only standalone eval workflow).
+#
+# To add a new benchmark:
+#   Add an entry under benchmarks: with seeds and optional judge override.
+#
+# To change the judge:
+#   Edit the judge: section or override in a child config.
+# ============================================================================
+
+# ============================================================================
+# Judges (defined first so anchors are available to benchmarks below)
+# ============================================================================
+
+.judge_reasoning: &judge_reasoning
+  model: gpt-5-chat-latest
+  server_type: openai
+  server_address: https://api.openai.com/v1
+  server_gpus: null
+  server_nodes: null
+  extra_args: >-
+    ++prompt_config=/workspace/nvflow/recipes/finance/prompts/sec_judge.yaml
+    ++inference.temperature=0.0
+    ++inference.tokens_to_generate=8192
+    ++generation_key=judgement
+    ++skip_extraction=True
+
+judge: *judge_reasoning
+
+.judge_finance_strict: &judge_finance_strict
+  model: gpt-5-mini
+  server_type: openai
+  server_address: https://api.openai.com/v1
+  server_gpus: null
+  server_nodes: null
+  extra_args: >-
+    ++prompt_config=/workspace/nvflow/recipes/finance/prompts/sec_judge_strict.yaml
+    ++inference.temperature=0.0
+    ++inference.tokens_to_generate=8192
+    ++generation_key=judgement
+    ++skip_extraction=True
+
+# ============================================================================
+# Benchmarks
+# ============================================================================
+# All models are evaluated on these by default.
+
+benchmarks:
+  secque:
+    seeds: 5
+  financebench:
+    seeds: 5
+  finance_agent:
+    seeds: 5
+    judge: *judge_finance_strict
+    installation_command: "pip install -q --ignore-requires-python --force-reinstall model-library==0.1.8 && pip install -q func-timeout 'backoff>=2.2.1' 'tavily==1.1.0' 'compute-eval @ git+https://github.com/NVIDIA/compute-eval.git@2d14770'"
+    extra_args: >-
+      ++max_turns=50
+      ++inference.tokens_to_generate=32000
+      ++inference.temperature=0.0
+      ++max_concurrent_requests=1
+
+# ============================================================================
+# Shared Settings
+# ============================================================================
+
+datasets_dir: /workspace/nvflow/recipes/finance/datasets
+
+conversion:
+  num_gpus: 8
+  # Workaround for nemo-rl 0.7.1 bug - remove when container is updated
+  installation_command: "sed -i 's/hf_overrides=hf_overrides,//' /nemo_run/code/nemo_skills/training/nemo_rl/convert_megatron_to_hf.py"
+
+# ============================================================================
+# Prepare Data Stage (used by baselines.yaml and shared reference)
+# ============================================================================
+
+stages:
+  prepare_data:
+    dataset_names: [secque, financebench, finance_agent]
+    output_dir: /workspace/nvflow/recipes/finance/datasets

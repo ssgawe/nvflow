@@ -1,0 +1,233 @@
+# ============================================================================
+# SFT Model Presets (NeMo-RL Native Format)
+# ============================================================================
+# All presets use NeMo-RL's native config structure for direct pass-through
+# to nemo_rl.algorithms.sft.SFTTrainer via start_sft.py.
+#
+# Design Philosophy (matches NeMo-RL):
+#   - Base preset contains model-independent defaults
+#   - Model-specific overrides go in workflow YAML files
+#
+# NeMo-RL pattern:
+#   sft.yaml (base) → sft-nanov3.yaml (workflow overrides)
+#
+# Our pattern:
+#   sft-base preset → {model}_workflow.yaml (workflow overrides)
+# ============================================================================
+
+presets:
+
+  # ==========================================================================
+  # Base Preset (model-independent defaults, matches NeMo-RL sft.yaml)
+  # ==========================================================================
+  # Use this preset for all new models and provide model-specific overrides
+  # in your workflow YAML file.
+  #
+  # Example usage in workflow:
+  #   training:
+  #     preset: "sft-base"
+  #     backend: fsdp
+  #     overrides:
+  #       policy:
+  #         max_total_sequence_length: 49152
+  #         dtensor_cfg:
+  #           tensor_parallel_size: 2
+  # ==========================================================================
+
+  sft-base:
+    description: "Base SFT configuration - model-independent defaults (matches NeMo-RL v0.5.0 schema)"
+
+    # Training algorithm settings
+    sft:
+      max_num_epochs: 1
+      max_num_steps: 1000000
+      val_period: 100
+      val_at_start: true
+
+    # Checkpointing (NEW FORMAT - use val:metric_name)
+    checkpointing:
+      enabled: true
+      save_period: 100
+      keep_top_k: 50
+      metric_name: "val:val_loss"  # NEW: prefix with "val:" or "train:"
+
+    # Policy (model) configuration
+    policy:
+      train_global_batch_size: 128
+      train_micro_batch_size: 1
+      max_total_sequence_length: 4096
+      precision: "bfloat16"
+      max_grad_norm: 1.0
+
+      # NEW: Makes sequence length divisible by TP for sequence parallel
+      make_sequence_length_divisible_by: 1
+
+      # NEW: Optional optimizer offload for logprob computation
+      offload_optimizer_for_logprob: false
+
+      # ----------------------------------------------------------------------
+      # FSDP/DTensor configuration (used when backend=fsdp)
+      # NEW FIELDS: _v2, env_vars, lora_cfg
+      # ----------------------------------------------------------------------
+      dtensor_cfg:
+        _v2: true  # NEW: Version flag for new schema
+        # enabled field removed - nemo-skills handles backend switching
+        env_vars: {}  # NEW: Environment variables for DTensor
+        cpu_offload: false
+        tensor_parallel_size: 1
+        context_parallel_size: 1
+        expert_parallel_size: 1  # NEW: For MoE models
+        sequence_parallel: false
+        activation_checkpointing: false
+        custom_parallel_plan: null
+
+        # NEW: LoRA configuration for FSDP
+        lora_cfg:
+          enabled: false
+          target_modules: []
+          exclude_modules: []
+          match_all_linear: true
+          dim: 8
+          alpha: 32
+          dropout: 0.0
+          dropout_position: "post"
+          lora_A_init: "xavier"
+          use_triton: true
+
+      # NEW: Dynamic batching configuration
+      dynamic_batching:
+        enabled: false
+        train_mb_tokens: 4096  # Will be overridden by OmegaConf resolver
+        sequence_length_round: 64
+
+      # NEW: Sequence packing configuration
+      sequence_packing:
+        enabled: false
+        train_mb_tokens: 4096  # Will be overridden by OmegaConf resolver
+        algorithm: "modified_first_fit_decreasing"
+        sequence_length_round: 64
+
+      # ----------------------------------------------------------------------
+      # Megatron configuration (used when backend=megatron)
+      # NEW FIELDS: env_vars, empty_unused_memory_level, peft
+      # ----------------------------------------------------------------------
+      megatron_cfg:
+        # enabled field removed - nemo-skills handles backend switching
+        env_vars: {}  # NEW: Environment variables for Megatron
+        empty_unused_memory_level: 1  # NEW: 1 is safer (was 0 in old schema)
+        activation_checkpointing: false
+        tensor_model_parallel_size: 1
+        pipeline_model_parallel_size: 1
+        context_parallel_size: 1
+        expert_model_parallel_size: 1
+        expert_tensor_parallel_size: 1
+        sequence_parallel: false
+        pipeline_dtype: "bfloat16"
+        num_layers_in_first_pipeline_stage: null
+        num_layers_in_last_pipeline_stage: null
+        freeze_moe_router: false
+        # MoE parameters (safe defaults for both MoE and dense models)
+        moe_router_dtype: "fp32"                        # Changed from null to fp32
+        moe_router_load_balancing_type: "none"          # Changed from "aux_loss" (has Megatron bug)
+        moe_aux_loss_coeff: 0.0                         # Added: required with aux_loss disabled
+        moe_router_bias_update_rate: 1e-3
+        moe_permute_fusion: false
+        apply_rope_fusion: true
+        bias_activation_fusion: true
+        layernorm_epsilon: 1e-6
+        defer_fp32_logits: false
+        moe_per_layer_logging: false
+        moe_enable_deepep: false
+        moe_token_dispatcher_type: "allgather"
+        moe_shared_expert_overlap: false
+
+        # NEW: PEFT/LoRA configuration for Megatron
+        peft:
+          enabled: false
+          target_modules: []
+          exclude_modules: []
+          dim: 8
+          alpha: 32
+          dropout: 0.0
+          dropout_position: "post"
+          lora_A_init_method: "xavier"
+          lora_B_init_method: "zero"
+          a2a_experimental: false
+          lora_dtype: null
+
+        # Megatron optimizer
+        optimizer:
+          optimizer: "adam"
+          lr: 5.0e-6
+          min_lr: 5.0e-6
+          weight_decay: 0.01
+          bf16: true
+          fp16: false
+          # params_dtype removed - SFT uses model dtype (bfloat16), not float32
+          adam_beta1: 0.9
+          adam_beta2: 0.98
+          adam_eps: 1e-5
+          sgd_momentum: 0.9
+          use_distributed_optimizer: true
+          # use_precision_aware_optimizer removed - GRPO-only setting
+          clip_grad: 1.0
+          optimizer_cpu_offload: false
+          optimizer_offload_fraction: 0.0
+
+        # Megatron scheduler (default: cosine decay for SFT)
+        scheduler:
+          start_weight_decay: 0.01
+          end_weight_decay: 0.01
+          weight_decay_incr_style: "constant"
+          lr_decay_style: "cosine"  # SFT uses cosine (GRPO uses constant)
+          lr_decay_iters: 1000
+          lr_warmup_iters: 100      # Standard SFT warmup (was 0)
+          lr_warmup_init: 1e-7      # Warmup from small value (was 5e-6)
+
+        # Megatron DDP config
+        distributed_data_parallel_config:
+          grad_reduce_in_fp32: false
+          overlap_grad_reduce: true
+          overlap_param_gather: true
+          data_parallel_sharding_strategy: "optim_grads_params"
+          use_custom_fsdp: false
+
+      # ----------------------------------------------------------------------
+      # FSDP Optimizer (PyTorch native, at policy level)
+      # CRITICAL: This is REQUIRED for FSDP backend!
+      # ----------------------------------------------------------------------
+      optimizer:
+        name: "torch.optim.AdamW"
+        kwargs:
+          lr: 5.0e-6
+          weight_decay: 0.1
+          betas: [0.9, 0.98]
+          eps: 1e-5
+          foreach: false  # Must be false for DTensor
+          fused: false    # Must be false for DTensor
+
+      # ----------------------------------------------------------------------
+      # FSDP Scheduler (PyTorch native, at policy level)
+      # Default: Linear warmup (2000 steps) + Cosine annealing decay
+      # Override in workflow YAML if different schedule needed
+      # ----------------------------------------------------------------------
+      scheduler:
+        - name: "torch.optim.lr_scheduler.LinearLR"
+          kwargs:
+            start_factor: 0.033    # Warmup from ~1e-7 to full LR
+            end_factor: 1.0
+            total_iters: 2000      # 2000 step warmup
+        - name: "torch.optim.lr_scheduler.CosineAnnealingLR"
+          kwargs:
+            T_max: 100000          # Total training steps
+            eta_min: 5.0e-7        # Min LR (10x lower than base)
+        - milestones: [0]          # Start warmup immediately
+
+    # Data settings
+    data:
+      max_input_seq_length: 4096
+      add_bos: true
+      add_eos: true
+      add_generation_prompt: false
+      shuffle: true
+      num_workers: 10
