@@ -1,0 +1,60 @@
+processors_to_run: all
+
+output_path: ???
+prompt_config: null
+
+preprocessed_dataset_files: null
+input_files: null
+
+exclude_optional_keys: false
+metadata: null
+skip_first: 0
+add_correct: true
+add_incorrect: true
+add_unlabeled: true
+use_judgement: false
+
+tokenizer: null
+chat_template_kwargs: null
+system_message: null
+assistant_end: null
+
+input_key: problem
+output_key: generation
+
+deduplicate: true
+
+processors:
+  - _target_: nemo_skills.training.data_preparation_utils.preprocessing.ReadData
+    preprocessed_dataset_files: ${preprocessed_dataset_files}
+    input_files: ${input_files}
+    input_key: ${input_key}
+    output_key: ${output_key}
+    skip_first: ${skip_first}
+    add_correct: ${add_correct}
+    add_incorrect: ${add_incorrect}
+    add_unlabeled: ${add_unlabeled}
+    use_judgement: ${use_judgement}
+    deduplicate: ${deduplicate}
+    keys_to_keep:
+      - uuid
+      - context
+      - question_type
+      - task
+      - split
+      - problem
+      - problem_id
+      - submission_id
+
+  - _target_: nemo_skills.training.data_preparation_utils.preprocessing.WriteFinalSftManifest
+    output_manifest_file: ${output_path}
+    prompt_config: ${prompt_config}
+    tokenizer: ${tokenizer}
+    chat_template_kwargs: ${chat_template_kwargs}
+    system_message: ${system_message}
+    assistant_end: ${assistant_end}
+    input_key: ${input_key}
+    output_key: ${output_key}
+    metadata: ${metadata}
+    exclude_optional_keys: ${exclude_optional_keys}
+

@@ -54,6 +54,7 @@ from rich.table import Table
 
 # Auto-discover all recipes and stages (must be after core imports)
 import nvflow.recipes.finance  # noqa: E402, F401 - import for side-effect
+import nvflow.recipes.telco  # noqa: E402, F401 - import for side-effect
 from nvflow import __version__
 from nvflow.core import BaseStage, StageRegistry, WorkflowRunner
 

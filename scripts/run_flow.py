@@ -41,6 +41,7 @@ sys.path.insert(0, str(project_root))
 
 # Auto-discover all recipes and stages
 import nvflow.recipes.finance  # noqa: F401, E402
+import nvflow.recipes.telco  # noqa: F401, E402
 from nvflow.core import WorkflowRunner  # noqa: E402
 
 

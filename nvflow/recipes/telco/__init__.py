@@ -12,19 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""NVFlow Recipes.
+"""Telco Recipe - Auto-discover all stages."""
 
-Each recipe is a self-contained implementation for a specific domain:
-- example: Example recipe for learning and testing
-- finance: Financial reasoning models
-- telco: Telco code-to-text models
-- retail: Retail domain models (future)
-- healthcare: Healthcare domain models (future)
-"""
+# Auto-import stages to trigger registration
+from . import stages  # noqa: F401
 
-# Import all recipes to trigger stage registration
-from . import (
-    example,  # noqa: F401
-    finance,  # noqa: F401
-    telco,  # noqa: F401
-)

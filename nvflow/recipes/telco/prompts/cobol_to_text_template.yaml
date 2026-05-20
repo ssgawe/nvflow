@@ -1,0 +1,27 @@
+# ============================================================================
+# COBOL-to-Text SFT Prompt Template
+# ============================================================================
+# Purpose: Transform COBOL source code into a natural language description
+#          for supervised fine-tuning (SFT)
+#
+# Task: Given a COBOL program, produce a concise natural language description
+#       of the problem the program solves or the computation it performs.
+#
+# Input Variables (from pre-processed telco dataset):
+#   - problem: COBOL source code (renamed from 'cobol' field)
+#
+# Output: Natural language description of what the program does
+#         (corresponds to 'generation' field, originally 'description'/'nl')
+#
+# Usage: Reference this prompt in your workflow config:
+#   ++prompt_config=nvflow/recipes/telco/prompts/cobol_to_text_template.yaml
+# ============================================================================
+
+# User message - instructions and COBOL input
+user: |
+  You are given a COBOL program. Your task is to produce a concise natural language description of the problem the program solves or the computation it performs. Focus on what the program does, not how it is implemented. Do not describe COBOL-specific syntax or divisions — describe the task or algorithm.
+
+  COBOL Program:
+  {problem}
+
+  Description:

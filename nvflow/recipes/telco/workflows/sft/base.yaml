@@ -1,0 +1,90 @@
+# ============================================================================
+# Telco COBOL-to-Text SFT - BASE CONFIG
+# ============================================================================
+# Shared workflow for telco supervised fine-tuning.
+#
+# The base workflow is model-independent. Model configs inherit this file and
+# override tokenizer/model paths, backend, parallelism, and optimizer settings.
+#
+# Pipeline:
+#   0. prepare_cobol_data       Raw COBOL JSONL -> problem/generation schema
+#   1. prepare_for_sft          Apply prompt template + tokenizer chat formatting
+#   2. sequence_length_grouping Produce bucketed files for length distribution checks
+#   3. training                 Run NeMo-RL SFT
+# ============================================================================
+
+recipe: telco
+
+workflow:
+  name: "sft"
+  type: "training"
+  description: "SFT training for telco COBOL-to-text conversion"
+
+cluster: my_cluster
+
+base_output_dir: /workspace/outputs/telco/workflow-sft-cobol/base
+
+data:
+  raw_train_file: nvflow/recipes/telco/datasets/telco_sft_train.jsonl
+  raw_val_file: nvflow/recipes/telco/datasets/telco_sft_val.jsonl
+  raw_test_file: nvflow/recipes/telco/datasets/telco_sft_test.jsonl
+  prompt_config: nvflow/recipes/telco/prompts/cobol_to_text_template.yaml
+
+pipeline_stages:
+  - prepare_cobol_data
+  - prepare_for_sft
+  - sequence_length_grouping
+  - training
+
+directories:
+  step-0-prepare-cobol-data: ${base_output_dir}/step-0-prepare-cobol-data
+  step-1-prepare-for-sft: ${base_output_dir}/step-1-prepare-for-sft
+  step-2-sequence-length-grouping: ${base_output_dir}/step-2-sequence-length-grouping
+  step-3-training: ${base_output_dir}/step-3-training
+
+stages:
+
+  prepare_cobol_data:
+    train_file: ${data.raw_train_file}
+    val_file: ${data.raw_val_file}
+    test_file: ${data.raw_test_file}
+    output_dir: ${directories.step-0-prepare-cobol-data}
+    num_chunks: 1
+    source_key: cobol
+    target_key: description
+    task_name: cobol_to_text
+    dependencies: []
+
+  prepare_for_sft:
+    input_dir: ${directories.step-0-prepare-cobol-data}/chunks
+    output_dir: ${directories.step-1-prepare-for-sft}
+    val_input_file: ${directories.step-0-prepare-cobol-data}/val.jsonl
+    add_token_counts: false
+    dependencies:
+      - prepare_cobol_data
+
+  sequence_length_grouping:
+    input_file: ${directories.step-1-prepare-for-sft}/final_result.jsonl
+    output_dir: ${directories.step-2-sequence-length-grouping}
+    bucket_sizes:
+      - 1024
+      - 2048
+      - 4096
+    dependencies:
+      - prepare_for_sft
+
+  training:
+    training_data: ${directories.step-1-prepare-for-sft}/final_result.jsonl
+    validation_data: ${directories.step-1-prepare-for-sft}/val_result.jsonl
+    output_dir: ${directories.step-3-training}
+
+    dependencies:
+      - prepare_for_sft
+      - sequence_length_grouping
+
+    num_gpus: 8
+    num_nodes: 1
+    dependent_jobs: 0
+    preset: "sft-base"
+    wandb_project: telco-cobol-training
+    wandb_mode: disabled

@@ -1,0 +1,14 @@
+# ============================================================================
+# Telco Recipe Configuration
+# ============================================================================
+# This recipe contains telco/domain-code workflows.  The initial workflow is
+# supervised fine-tuning for COBOL-to-text conversion, with paired 30B model
+# configs so results can be compared on the same data and prompt.
+# ============================================================================
+
+recipe: telco
+description: "Telco workflows for code-to-text model adaptation and comparison"
+
+workflow_order:
+  - sft
+

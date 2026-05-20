@@ -12,19 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""NVFlow Recipes.
+"""Auto-discover telco SFT stages."""
 
-Each recipe is a self-contained implementation for a specific domain:
-- example: Example recipe for learning and testing
-- finance: Financial reasoning models
-- telco: Telco code-to-text models
-- retail: Retail domain models (future)
-- healthcare: Healthcare domain models (future)
-"""
+import importlib
+from pathlib import Path
 
-# Import all recipes to trigger stage registration
-from . import (
-    example,  # noqa: F401
-    finance,  # noqa: F401
-    telco,  # noqa: F401
-)
+_current_dir = Path(__file__).parent
+for file in _current_dir.glob("*.py"):
+    if file.stem.startswith("_"):
+        continue
+    importlib.import_module(f".{file.stem}", package=__package__)
+
