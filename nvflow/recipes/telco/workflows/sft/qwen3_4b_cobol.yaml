@@ -1,0 +1,167 @@
+# ============================================================================
+# Qwen3-4B SFT Training - COBOL-to-Text Task
+# ============================================================================
+# Sanity-check variant of nemotron_nano_cobol.yaml using Qwen3-4B-Instruct-2507.
+# Same data, same prompt, smaller dense model — validates the pipeline end-to-end
+# while we work around the Mamba/MoE bf16 NaN in the Nemotron-Nano path.
+#
+# Model: /home/nvidia/nvflow/models/Qwen/Qwen3-4B-Instruct-2507
+# ============================================================================
+
+recipe: telco
+
+workflow:
+  name: "sft"
+  type: "training"
+  description: "SFT Qwen3-4B on COBOL-to-text task (sanity check)"
+
+cluster: my_cluster
+
+base_output_dir: /workspace/outputs/telco/workflow-sft-cobol/qwen3-4b
+
+pipeline_stages:
+  # prep + grouping already done; train.jsonl manually concatenated from buckets
+  # - prepare_for_sft
+  # - sequence_length_grouping
+  - training
+
+directories:
+  step-0-prepare-for-sft: ${base_output_dir}/step-0-prepare-for-sft
+  step-1-sequence-length-grouping: ${base_output_dir}/step-1-sequence-length-grouping
+  step-2-training: ${base_output_dir}/step-2-training
+
+stages:
+
+  prepare_for_sft:
+    input_dir: /workspace/outputs/telco/cobol-preprocessed/chunks
+    output_dir: ${directories.step-0-prepare-for-sft}
+    val_input_file: /workspace/outputs/telco/cobol-preprocessed/val.jsonl
+    dependencies: []
+    prepare_data_kwargs:
+      ctx_args: >-
+        ++tokenizer=/hf_models/Qwen/Qwen3-4B-Instruct-2507
+        ++prompt_config=nvflow/recipes/telco/prompts/cobol_to_text_template.yaml
+        ++chat_template_kwargs.enable_thinking=false
+
+  sequence_length_grouping:
+    input_file: ${directories.step-0-prepare-for-sft}/final_result.jsonl
+    output_dir: ${directories.step-1-sequence-length-grouping}
+    tokenizer_path: /hf_models/Qwen/Qwen3-4B-Instruct-2507
+    bucket_sizes:
+      - 1024
+      - 2048
+      - 4096
+    dependencies:
+      - prepare_for_sft
+
+  # --------------------------------------------------------------------------
+  # Training — Qwen3-4B on 1 node × 8 GPUs (FSDP2)
+  # --------------------------------------------------------------------------
+  # 4B params is small for 8×93GB H100s. FSDP2 with TP=1 is sufficient.
+  training:
+    model_name: Qwen/Qwen3-4B-Instruct-2507
+    hf_checkpoint_path: /hf_models/Qwen/Qwen3-4B-Instruct-2507
+    training_data: ${directories.step-1-sequence-length-grouping}/train.jsonl
+    validation_data: ${directories.step-0-prepare-for-sft}/val_result.jsonl
+    output_dir: ${directories.step-2-training}
+
+    backend: megatron
+    num_nodes: 1
+    num_gpus: 8
+    dependent_jobs: 0
+
+    preset: "sft-base"
+
+    wandb_project: telco-cobol-training
+    wandb_mode: disabled
+
+    dependencies: []
+
+    overrides:
+      sft:
+        max_num_epochs: 3
+        val_period: 50
+
+      checkpointing:
+        save_period: 100
+        keep_top_k: 3
+        checkpoint_must_save_by: "00:03:40:00"
+
+      data:
+        max_input_seq_length: ${stages.training.overrides.policy.max_total_sequence_length}
+        force_reprocess: false
+        num_workers: 4
+
+      policy:
+        train_global_batch_size: 16
+        train_micro_batch_size: 1
+        max_total_sequence_length: 2048
+        precision: "bfloat16"
+        max_grad_norm: 1.0
+
+        dtensor_cfg:
+          enabled: false
+
+        megatron_cfg:
+          enabled: true
+          env_vars:
+            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+            CUDA_DEVICE_MAX_CONNECTIONS: "1"
+            NCCL_DEBUG: "WARN"
+
+          # Qwen3-4B is dense (no MoE) — simple TP=1 across 8 GPUs is fine
+          tensor_model_parallel_size: 1
+          pipeline_model_parallel_size: 1
+          context_parallel_size: 1
+          expert_model_parallel_size: 1
+          expert_tensor_parallel_size: 1
+          sequence_parallel: false
+
+          empty_unused_memory_level: 1
+          activation_checkpointing: false
+
+          bias_activation_fusion: true
+          apply_rope_fusion: true
+          layernorm_epsilon: 1.0e-6
+
+          pipeline_dtype: bfloat16
+
+          optimizer:
+            optimizer: "adam"
+            lr: 5.0e-5
+            min_lr: 5.0e-5
+            weight_decay: 0.1
+            bf16: true
+            fp16: false
+            params_dtype: "bfloat16"
+            adam_beta1: 0.9
+            adam_beta2: 0.98
+            adam_eps: 1.0e-8
+            sgd_momentum: 0.9
+            use_distributed_optimizer: true
+            use_precision_aware_optimizer: false
+            clip_grad: 1.0
+            optimizer_cpu_offload: false
+            optimizer_offload_fraction: 0.0
+
+          scheduler:
+            start_weight_decay: 0.0
+            end_weight_decay: 0.0
+            weight_decay_incr_style: "constant"
+            lr_decay_style: "constant"
+            lr_decay_iters: 60000
+            lr_warmup_iters: 50
+            lr_warmup_init: 3.0e-7
+            override_opt_param_scheduler: true
+
+          distributed_data_parallel_config:
+            grad_reduce_in_fp32: true
+            overlap_grad_reduce: true
+            overlap_param_gather: true
+            data_parallel_sharding_strategy: "optim_grads_params"
+            use_custom_fsdp: false
+
+        sequence_packing:
+          enabled: false  # consistent with Nemotron variant; not needed at this scale
+
+        make_sequence_length_divisible_by: 1

@@ -40,11 +40,11 @@ stages:
     company_info_file: ${directories.step-0-create-seed-data}/company_info_demo.tsv
     start_year: 2020
     end_year: 2024
-    inline_args: "++inference.tokens_to_generate=8192 ++chat_template_kwargs.reasoning_effort=low"
+    inline_args: "++inference.tokens_to_generate=4096 ++chat_template_kwargs.enable_thinking=false"
     stage_kwargs:
-      model: /hf_models/openai/gpt-oss-20b
+      model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
       server_type: vllm
-      server_gpus: 2
+      server_gpus: 1
       server_nodes: 1
       server_args: "--max-model-len 16384"
 
@@ -59,11 +59,11 @@ stages:
   # Stage 3: Generate Answers - Smaller model, fewer seeds
   # --------------------------------------------------------------------------
   generate_answers:
-    inline_args: "++inference.tokens_to_generate=8192 ++chat_template_kwargs.reasoning_effort=medium"
+    inline_args: "++inference.tokens_to_generate=4096 ++chat_template_kwargs.enable_thinking=false"
     stage_kwargs:
-      model: /hf_models/openai/gpt-oss-20b
+      model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
       server_type: vllm
-      server_gpus: 2
+      server_gpus: 1
       server_nodes: 1
       num_chunks: 2
       num_random_seeds: 3
@@ -74,11 +74,11 @@ stages:
   # Stage 4: GenSelect Answers - Smaller model
   # --------------------------------------------------------------------------
   genselect_answers:
-    inline_args: "++inference.tokens_to_generate=8192"
+    inline_args: "++inference.tokens_to_generate=4096 ++chat_template_kwargs.enable_thinking=false"
     stage_kwargs:
-      model: /hf_models/openai/gpt-oss-20b
+      model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
       server_type: vllm
-      server_gpus: 2
+      server_gpus: 1
       server_nodes: 1
       num_chunks: 4
       server_args: "--max-model-len 16384"
@@ -88,11 +88,11 @@ stages:
   # Stage 5: Filter Answers - Smaller model
   # --------------------------------------------------------------------------
   filter_answers:
-    inline_args: "++generation_key=filter_generation ++inference.tokens_to_generate=4192"
+    inline_args: "++generation_key=filter_generation ++inference.tokens_to_generate=2048 ++chat_template_kwargs.enable_thinking=false"
     stage_kwargs:
-      model: /hf_models/openai/gpt-oss-20b
+      model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
       server_type: vllm
-      server_gpus: 2
+      server_gpus: 1
       server_nodes: 1
       num_chunks: 4
       server_args: "--max-model-len 8192"

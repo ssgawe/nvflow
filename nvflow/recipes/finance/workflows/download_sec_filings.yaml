@@ -22,8 +22,8 @@ stages:
   demo:
     output_dir: ${output_dir}/demo/workflow-2-download-sec/step-0-download
     config: nvflow/recipes/finance/configs/demo.yaml
-    sec_identity_email: your.email@email.com  # UPDATE: Your email (required by SEC)
-    sec_identity_company: YourCompany         # UPDATE: Your company name
+    sec_identity_email: sgawe@nvidia.com
+    sec_identity_company: Nvidia
     dependencies: []
     stage_kwargs:
       installation_command: >-
@@ -36,8 +36,8 @@ stages:
   sap-500:
     output_dir: ${output_dir}/sap-500/workflow-2-download-sec/step-0-download
     config: nvflow/recipes/finance/configs/sp500.yaml
-    sec_identity_email: your.email@email.com  # UPDATE: Your email (required by SEC)
-    sec_identity_company: YourCompany         # UPDATE: Your company name
+    sec_identity_email: sgawe@nvidia.com
+    sec_identity_company: Nvidia
     dependencies: []
     stage_kwargs:
       installation_command: >-

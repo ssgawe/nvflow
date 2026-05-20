@@ -65,6 +65,10 @@ logs/
 *.log
 filings*/
 
+# Local NeMo/Slurm runtime artifacts
+/jobs/
+/recipes/
+
 # Example recipe - keep sample input data, ignore outputs
 nvflow/recipes/*/data/*
 !nvflow/recipes/*/data/input/

@@ -40,7 +40,7 @@ stages:
   prepare_for_sft:
     prepare_data_kwargs:
       ctx_args: >-
-        ++tokenizer=/hf_models/Qwen/Qwen3-4B
+        ++tokenizer=/hf_models/Qwen/Qwen3-4B-Instruct-2507
         ++prompt_config=nvflow/recipes/finance/prompts/secque_template.yaml
         ++chat_template_kwargs.enable_thinking=true
 
@@ -48,14 +48,14 @@ stages:
   # Stage 3: Sequence Length Grouping - Qwen3-4B tokenizer
   # --------------------------------------------------------------------------
   sequence_length_grouping:
-    tokenizer_path: /hf_models/Qwen/Qwen3-4B
+    tokenizer_path: /hf_models/Qwen/Qwen3-4B-Instruct-2507
 
   # --------------------------------------------------------------------------
   # Stage 4: Training - Qwen3-4B configuration (NeMo-RL format)
   # --------------------------------------------------------------------------
   training:
-    model_name: Qwen/Qwen3-4B
-    hf_checkpoint_path: /hf_models/Qwen/Qwen3-4B
+    model_name: Qwen/Qwen3-4B-Instruct-2507
+    hf_checkpoint_path: /hf_models/Qwen/Qwen3-4B-Instruct-2507
 
     # Use Megatron backend (standard for Qwen3-4B)
     backend: megatron
@@ -113,7 +113,7 @@ stages:
     checkpoint_path: ${directories.step-4-training}/model-qwen3-4b-1n-tp2-pp1-cp2-seq32k
     base_output_dir: ${base_output_dir}
     format: megatron
-    base_model: /hf_models/Qwen/Qwen3-4B
+    base_model: /hf_models/Qwen/Qwen3-4B-Instruct-2507
     server_type: vllm
     gpus: 1
     # Demo: only SecQUE and FinanceBench (skip finance_agent to save time)

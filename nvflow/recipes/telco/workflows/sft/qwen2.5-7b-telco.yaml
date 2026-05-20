@@ -1,0 +1,23 @@
+stages:
+  sft:
+    model:
+      base_model_path: /hf_models/Qwen/Qwen2.5-7B-Instruct
+      dtype: bfloat16
+      max_position_embeddings: 4096
+
+    policy:
+      backend: MEGATRON
+      megatron_cfg:
+        context_parallel_size: 1
+      sequence_packing:
+        enabled: false
+
+    data:
+      train_file: /workspace/recipes/telco/datasets/telco_sft_train.jsonl
+      val_file: /workspace/recipes/telco/datasets/telco_sft_val.jsonl
+
+cluster:
+  config_path: cluster_configs/my_cluster.yaml
+
+experiment:
+  name: telco-qwen2p5-7b-sft  

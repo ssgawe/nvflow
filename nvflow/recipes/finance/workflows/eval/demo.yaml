@@ -28,9 +28,9 @@ pipeline_stages:
 # Demo uses only SecQUE and FinanceBench (skip finance_agent to save time)
 benchmarks:
   secque:
-    seeds: 5
+    seeds: 1
   financebench:
-    seeds: 5
+    seeds: 1
   finance_agent: null
 
 stages:
@@ -40,7 +40,7 @@ stages:
 
 models:
   qwen3-4b:
-    path: /hf_models/Qwen/Qwen3-4B
+    path: /hf_models/Qwen/Qwen3-4B-Instruct-2507
     server_type: vllm
     dependencies: [prepare_data]
     inference_args: >-
@@ -57,7 +57,7 @@ models:
   gemma-3-4b-it:
     path: /hf_models/google/gemma-3-4b-it
     server_type: vllm
-    dependencies: [prepare_data]
+    dependencies: [prepare_data, qwen3-4b]
     # Max output context is 8192 tokens (hard limit: https://huggingface.co/google/gemma-3-4b-it)
     inference_args: >-
       ++prompt_config=/workspace/nvflow/recipes/finance/prompts/secque_template.yaml
@@ -69,7 +69,7 @@ models:
   gpt-oss-20b:
     path: /hf_models/openai/gpt-oss-20b
     server_type: vllm
-    dependencies: [prepare_data]
+    dependencies: [prepare_data, gemma-3-4b-it]
     inference_args: >-
       ++prompt_config=/workspace/nvflow/recipes/finance/prompts/secque_template.yaml
       ++inference.tokens_to_generate=32768

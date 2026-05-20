@@ -48,6 +48,10 @@ class PrepareForSFTStage(BaseStage):
         # Token counting option (filtering happens in train_validation_split)
         add_token_counts = config.get("add_token_counts", True)
 
+        # Optional single-file val processing (applies same prompt template as train data)
+        val_input_file = config.get("val_input_file")
+        val_output_file = f"{output_dir}/val_result.jsonl" if val_input_file else None
+
         output_file = f"{output_dir}/final_result.jsonl"
         temp_dir = f"{output_dir}/temp_chunks"
 
@@ -57,6 +61,9 @@ class PrepareForSFTStage(BaseStage):
         console.status("Preparing data for SFT training")
         console.detail("Input directory", input_dir)
         console.detail("Output file", output_file)
+        if val_input_file:
+            console.detail("Val input file", val_input_file)
+            console.detail("Val output file", val_output_file)
         if add_token_counts and tokenizer_path:
             console.detail("Add token counts", "Yes")
         console.blank()
@@ -93,6 +100,17 @@ class PrepareForSFTStage(BaseStage):
                 f"    '{output_file}' "
                 f"    --output_file '{output_file}' "
                 f"    --tokenizer_path '{tokenizer_path}'"
+            )
+
+        # Process val file through the same prompt template so it has input/output keys
+        if val_input_file and val_output_file:
+            cmd += (
+                f" && python -m nemo_skills.training.prepare_data "
+                f'  --config-path "$CONFIG_DIR" '
+                f"  --config-name data_prep.yaml "
+                f'  ++input_files="{val_input_file}" '
+                f'  ++output_path="{val_output_file}" '
+                f"  {prepare_data_ctx_args}"
             )
 
         # Submit data preparation job

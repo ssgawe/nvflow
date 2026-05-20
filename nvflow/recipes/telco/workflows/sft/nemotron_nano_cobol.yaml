@@ -1,0 +1,244 @@
+# ============================================================================
+# Nemotron-3-Nano-30B SFT Training - COBOL-to-Text Task
+# ============================================================================
+# Fine-tunes NVIDIA-Nemotron-3-Nano-30B-A3B on the telco COBOL dataset.
+# Task: given COBOL source code, generate a natural language description.
+#
+# Model: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+#   - MoE: 128 experts + 1 shared, 6 active per token
+#   - Active params: 3.5B, Total params: 30B
+#   - Context length: up to 1M tokens
+#
+# PREREQUISITE: Download the model before running:
+#   huggingface-cli download nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+#     --local-dir /home/nvidia/nvflow/models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+#
+# Data (pre-processed from telco datasets):
+#   Train: /workspace/outputs/telco/cobol-preprocessed/chunks/chunk_0.jsonl (727 samples)
+#   Val:   /workspace/outputs/telco/cobol-preprocessed/val.jsonl (1 sample, raw)
+#          → processed to step-0-prepare-for-sft/val_result.jsonl by prepare_for_sft
+#   Fields: problem (COBOL code), generation (description), context ("")
+#
+# Usage:
+#   uv run nflow run-all --config nvflow/recipes/telco/workflows/sft/nemotron_nano_cobol.yaml
+# ============================================================================
+
+recipe: telco
+
+workflow:
+  name: "sft"
+  type: "training"
+  description: "SFT Nemotron-3-Nano on COBOL-to-text task"
+
+cluster: my_cluster
+
+base_output_dir: /workspace/outputs/telco/workflow-sft-cobol/nemotron-3-nano
+
+# ============================================================================
+# Pipeline Stages
+# ============================================================================
+# Skips data_transformation (data pre-processed to problem/generation fields)
+# Skips train_validation_split (data already split into train/val files)
+pipeline_stages:
+  - prepare_for_sft           # Step 0: Apply prompt template + tokenize
+  - sequence_length_grouping  # Step 1: Group train data by sequence length
+  - training                  # Step 2: SFT training
+
+# ============================================================================
+# Directory Structure
+# ============================================================================
+directories:
+  step-0-prepare-for-sft: ${base_output_dir}/step-0-prepare-for-sft
+  step-1-sequence-length-grouping: ${base_output_dir}/step-1-sequence-length-grouping
+  step-2-training: ${base_output_dir}/step-2-training
+
+# ============================================================================
+# Stage Configurations
+# ============================================================================
+stages:
+
+  # --------------------------------------------------------------------------
+  # Step 0: Prepare for SFT
+  # --------------------------------------------------------------------------
+  # Reads pre-processed COBOL data (problem/generation/context fields),
+  # applies the COBOL-to-text prompt template, tokenizes with Nemotron tokenizer.
+  # Input: /workspace/outputs/telco/cobol-preprocessed/chunks/ (727 samples)
+  prepare_for_sft:
+    input_dir: /workspace/outputs/telco/cobol-preprocessed/chunks
+    output_dir: ${directories.step-0-prepare-for-sft}
+    val_input_file: /workspace/outputs/telco/cobol-preprocessed/val.jsonl
+    dependencies: []
+    prepare_data_kwargs:
+      ctx_args: >-
+        ++tokenizer=/hf_models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+        ++prompt_config=nvflow/recipes/telco/prompts/cobol_to_text_template.yaml
+        ++chat_template_kwargs.enable_thinking=false
+
+  # --------------------------------------------------------------------------
+  # Step 1: Sequence Length Grouping
+  # --------------------------------------------------------------------------
+  # Groups training samples by sequence length for efficient packing.
+  # COBOL data is short (~400-900 tokens), so 4K buckets are sufficient.
+  sequence_length_grouping:
+    input_file: ${directories.step-0-prepare-for-sft}/final_result.jsonl
+    output_dir: ${directories.step-1-sequence-length-grouping}
+    tokenizer_path: /hf_models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+    bucket_sizes:
+      - 1024   # short samples
+      - 2048   # medium samples
+      - 4096   # long samples (p95 < 4K tokens for this dataset)
+    dependencies:
+      - prepare_for_sft
+
+  # --------------------------------------------------------------------------
+  # Step 2: Training - Nemotron-3-Nano on single node (8 GPUs)
+  # --------------------------------------------------------------------------
+  # Adapts the Nemotron-3-Nano settings for:
+  #   - 1 node × 8 GPUs (vs. 32 nodes × 256 GPUs in production)
+  #   - Short COBOL sequences (4K vs. 48K context)
+  #   - Pre-split val file (1 sample, used for loss monitoring only)
+  #
+  # Parallelism for 8 GPUs + MoE (128 experts):
+  #   TP=2, PP=1, CP=1, EP=4 → DP=4, 32 experts per EP rank
+  training:
+    model_name: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+    hf_checkpoint_path: /hf_models/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+    training_data: ${directories.step-1-sequence-length-grouping}/train.jsonl
+    validation_data: ${directories.step-0-prepare-for-sft}/val_result.jsonl
+    output_dir: ${directories.step-2-training}
+
+    backend: fsdp
+    num_nodes: 1
+    num_gpus: 8
+    dependent_jobs: 0
+
+    preset: "sft-base"
+
+    wandb_project: telco-cobol-training
+    wandb_mode: disabled
+
+    dependencies:
+      - sequence_length_grouping
+
+    overrides:
+      sft:
+        max_num_epochs: 3
+        val_period: 50
+
+      checkpointing:
+        save_period: 100
+        keep_top_k: 3
+        checkpoint_must_save_by: "00:03:40:00"
+
+      data:
+        max_input_seq_length: ${stages.training.overrides.policy.max_total_sequence_length}
+        force_reprocess: false
+        num_workers: 4
+
+      policy:
+        train_global_batch_size: 16
+        train_micro_batch_size: 1
+        max_total_sequence_length: 2048  # matches reference NanoV3 recipe
+        precision: "bfloat16"
+        max_grad_norm: 1.0
+
+        # FSDP2 / DTensor backend (matches official sft-nanov3-30BA3B reference recipe).
+        # Megatron path produces NaN at iter-1 backward for this hybrid Mamba/MoE model.
+        dtensor_cfg:
+          enabled: true
+          _v2: true
+          cpu_offload: false
+          tensor_parallel_size: 1
+          context_parallel_size: 1
+          expert_parallel_size: 1
+          sequence_parallel: false
+          activation_checkpointing: true
+          custom_parallel_plan: null
+          # LoRA — required to fit 30B model on 1 node × 8×93GB GPUs.
+          # Reference recipe uses 2 nodes for full-finetune; we don't have that.
+          lora_cfg:
+            enabled: true
+            target_modules: []
+            exclude_modules: []
+            match_all_linear: true
+            dim: 256
+            alpha: 512
+            dropout: 0.0
+            dropout_position: post
+            lora_A_init: xavier
+            use_triton: false  # Triton LoRA requires flash-attn; safer off
+
+        megatron_cfg:
+          enabled: false
+
+          env_vars:
+            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+            CUDA_DEVICE_MAX_CONNECTIONS: "1"
+            NVTE_FWD_LAYERNORM_SM_MARGIN: "16"
+            NVTE_BWD_LAYERNORM_SM_MARGIN: "16"
+            NCCL_DEBUG: "WARN"
+
+          # Parallelism for 8 GPUs (single node) with 30B MoE:
+          #   TP=2, PP=1, CP=1, EP=4 — needed for activation memory headroom
+          tensor_model_parallel_size: 2
+          pipeline_model_parallel_size: 1
+          context_parallel_size: 1        # Disabled: sequences are short, no benefit
+          num_moe_experts: 128            # Nemotron-3-Nano: 128 experts total
+          expert_model_parallel_size: 4   # 128 experts / 4 = 32 per rank
+          expert_tensor_parallel_size: 1
+          sequence_parallel: true         # required to avoid activation OOM
+
+          empty_unused_memory_level: 1
+          activation_checkpointing: true
+
+          bias_activation_fusion: false
+          apply_rope_fusion: false  # fused RoPE can NaN at bf16 on hybrid Mamba models
+          layernorm_epsilon: 1.0e-6
+          defer_fp32_logits: true  # fp32 logits/loss for Mamba bf16 stability
+
+          pipeline_dtype: ${stages.training.overrides.policy.precision}
+          num_layers_in_first_pipeline_stage: null
+          num_layers_in_last_pipeline_stage: null
+
+          optimizer:
+            optimizer: "adam"
+            lr: 5.00001e-5
+            min_lr: 5.0e-5
+            weight_decay: 0.0
+            bf16: true
+            fp16: false
+            params_dtype: "bfloat16"
+            adam_beta1: 0.9
+            adam_beta2: 0.98
+            adam_eps: 1.0e-8
+            sgd_momentum: 0.9
+            use_distributed_optimizer: true
+            use_precision_aware_optimizer: false
+            clip_grad: ${stages.training.overrides.policy.max_grad_norm}
+            optimizer_cpu_offload: false
+            optimizer_offload_fraction: 0.0
+
+          scheduler:
+            start_weight_decay: 0.0
+            end_weight_decay: 0.0
+            weight_decay_incr_style: "constant"
+            lr_decay_style: "constant"
+            lr_decay_iters: 60000
+            lr_warmup_iters: 50
+            lr_warmup_init: 3.0e-7
+            override_opt_param_scheduler: true
+
+          distributed_data_parallel_config:
+            grad_reduce_in_fp32: true
+            overlap_grad_reduce: true
+            overlap_param_gather: true
+            data_parallel_sharding_strategy: "optim_grads_params"
+            use_custom_fsdp: false
+
+        sequence_packing:
+          enabled: false  # MambaModel.forward() doesn't accept packed_seq_params
+          train_mb_tokens: ${stages.training.overrides.policy.max_total_sequence_length}
+          algorithm: "modified_first_fit_decreasing"
+          sequence_length_round: 64
+
+        make_sequence_length_divisible_by: ${stages.training.overrides.policy.dtensor_cfg.tensor_parallel_size}
