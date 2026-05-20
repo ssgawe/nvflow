@@ -1,0 +1,43 @@
+# =============================================================================
+# Reconstructed Active Configuration for my_cluster
+# =============================================================================
+name: my_cluster
+executor: slurm
+partition: all
+account: nemotron
+job_dir: /home/nvidia/jobs
+job_name_prefix: "nvflow-"
+
+# CRITICAL: This fixes the "Read-only file system" error
+container_writable: True
+no_container_mount_home: False
+
+# REQUIRED: Tells NVFlow which image to use for each tool
+containers:
+  nemo-skills: /home/nvidia/spg/nvflow/containers/nemo-skills-latest.sqsh
+  vllm: /home/nvidia/spg/nvflow/containers/vllm-latest.sqsh
+  nemo-rl: /home/nvidia/spg/nvflow/containers/nemo-rl-latest.sqsh
+  sglang: /home/nvidia/spg/nvflow/containers/sglang-v0.5.4.sqsh
+
+# Mount Points (Host Path : Container Path)
+mounts:
+  - /home/nvidia/nvflow/models:/hf_models
+  - /home/nvidia/nvflow:/workspace
+  - /home/nvidia:/home/nvidia
+  - /data:/data
+#  - /home/nvidia/spg/nvflow_outputs:/workspace/outputs
+
+# Environment Variables
+env_vars:
+  - HF_HOME=/hf_models/cache/huggingface
+  - NCCL_DEBUG=INFO
+  - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+  - CUDA_DEVICE_MAX_CONNECTIONS=1
+  - VIRTUAL_ENV=
+  - VIRTUAL_ENV_PROMPT=
+  - TZDIR=/home/nvidia/.local/lib/python3.10/site-packages/tzdata/zoneinfo
+
+# Required for some local Slurm/Enroot setups
+extra_sandbox_args:
+  - --overlap
+  - --container-writable
