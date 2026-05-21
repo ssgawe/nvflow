@@ -55,9 +55,20 @@ Specifies the Ray cluster initialization template. Use if Ray cluster hangs duri
 ray_template: "ray_enroot.sub.j2"
 ```
 
+For clusters where the Ray head container must be writable, point to the
+repo-local template instead:
+
+```yaml
+ray_template: "/path/to/nvflow/cluster_configs/ray_enroot_writable.sub.j2"
+```
+
 **Details:**
 - **Default:** `"ray.sub.j2"` (works with SLURM 24.x)
 - **If Ray hangs:** Use `"ray_enroot.sub.j2"` to fix container reattachment issues
+- **If Ray logs show a read-only container error while patching `nsight.py`:** Use
+  `ray_enroot_writable.sub.j2`, which adds `--container-writable` to Ray head and
+  worker container launches and limits Ray's advertised CPU count to twice the
+  GPU count so Ray does not prestart one Python worker per Slurm-allocated CPU.
 - **Symptoms:** Ray cluster hangs, workers fail to connect, error "execve(): bad interpreter"
 - **Known affected:** SLURM 25.x (confirmed on 25.11.2)
 - **Known working:** SLURM 24.x works without this fix

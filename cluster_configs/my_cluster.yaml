@@ -11,6 +11,7 @@ job_name_prefix: "nvflow-"
 # CRITICAL: This fixes the "Read-only file system" error
 container_writable: True
 no_container_mount_home: False
+ray_template: /home/nvidia/spg/nvflow/cluster_configs/ray_enroot_writable.sub.j2
 
 # REQUIRED: Tells NVFlow which image to use for each tool
 containers:

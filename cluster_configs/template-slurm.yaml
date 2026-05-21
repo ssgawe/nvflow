@@ -12,7 +12,11 @@ executor: slurm
 # =============================================================================
 # Ray Cluster Template (for SLURM compatibility)
 # =============================================================================
-# IMPORTANT: If Ray cluster hangs during initialization, use "ray_enroot.sub.j2"
+# IMPORTANT: If Ray cluster hangs during initialization, use "ray_enroot.sub.j2".
+# If the Ray head logs show a read-only container error while patching nsight.py,
+# or Ray prestarts too many Python workers, use the repo-local writable variant.
+# It keeps Ray CPU advertising bounded while leaving the Slurm allocation intact:
+# ray_template: "<REPO_ROOT>/cluster_configs/ray_enroot_writable.sub.j2"
 #
 # Symptoms indicating you need this fix:
 #   - Ray cluster hangs during initialization
@@ -23,7 +27,7 @@ executor: slurm
 # Known working versions: SLURM 24.x works without this fix
 #
 # Check your SLURM version: scontrol show config | grep SLURM_VERSION
-# Uncomment this line if you experience Ray cluster hangs:
+# Uncomment this line if you experience Ray cluster hangs and do not need a writable container:
 # ray_template: "ray_enroot.sub.j2"
 
 # =============================================================================
