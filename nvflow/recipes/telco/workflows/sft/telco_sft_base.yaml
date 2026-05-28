@@ -1,0 +1,102 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Generic telco SFT workflow base.
+# Compose task-specific data/schema config with model-specific training config.
+recipe: telco
+workflow:
+  name: sft
+  description: "Generic telco supervised fine-tuning workflow"
+  type: training
+
+cluster: my_cluster
+base_output_dir: /workspace/outputs/telco/workflow-sft/base
+
+data:
+  raw_train_file: null
+  raw_val_file: null
+  raw_test_file: null
+  prompt_config: null
+  task_name: telco_sft
+  source_keys:
+    - problem
+    - source
+    - input
+    - text
+  target_keys:
+    - generation
+    - target
+    - output
+    - answer
+    - nl
+  metadata_keys:
+    - problem_id
+    - submission_id
+
+pipeline_stages:
+  - prepare_sft_data
+  - prepare_for_sft
+  - sequence_length_grouping
+  - training
+
+directories:
+  step-0-prepare-sft-data: ${base_output_dir}/step-0-prepare-sft-data
+  step-1-prepare-for-sft: ${base_output_dir}/step-1-prepare-for-sft
+  step-2-sequence-length-grouping: ${base_output_dir}/step-2-sequence-length-grouping
+  step-3-training: ${base_output_dir}/step-3-training
+
+stages:
+  prepare_sft_data:
+    train_file: ${data.raw_train_file}
+    val_file: ${data.raw_val_file}
+    test_file: ${data.raw_test_file}
+    output_dir: ${directories.step-0-prepare-sft-data}
+    num_chunks: 4
+    source_keys: ${data.source_keys}
+    target_keys: ${data.target_keys}
+    metadata_keys: ${data.metadata_keys}
+    task_name: ${data.task_name}
+    dependencies: []
+
+  prepare_for_sft:
+    input_dir: ${directories.step-0-prepare-sft-data}/chunks
+    output_dir: ${directories.step-1-prepare-for-sft}
+    val_input_file: ${directories.step-0-prepare-sft-data}/val.jsonl
+    add_token_counts: false
+    dependencies:
+      - prepare_sft_data
+
+  sequence_length_grouping:
+    input_file: ${directories.step-1-prepare-for-sft}/final_result.jsonl
+    output_dir: ${directories.step-2-sequence-length-grouping}
+    bucket_sizes:
+      - 1024
+      - 2048
+      - 4096
+    dependencies:
+      - prepare_for_sft
+
+  training:
+    training_data: ${directories.step-1-prepare-for-sft}/final_result.jsonl
+    validation_data: ${directories.step-1-prepare-for-sft}/val_result.jsonl
+    output_dir: ${directories.step-3-training}
+    num_nodes: 1
+    num_gpus: 8
+    dependent_jobs: 0
+    preset: "sft-base"
+    wandb_project: telco-sft-training
+    wandb_mode: disabled
+    dependencies:
+      - prepare_for_sft
+      - sequence_length_grouping

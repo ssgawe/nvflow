@@ -14,9 +14,12 @@
 #
 """Tests for core functionality."""
 
+import json
+
 import pytest
 
-from nvflow.core import BaseStage, StageRegistry
+from nvflow.core import BaseStage, StageRegistry, WorkflowRunner
+from nvflow.recipes.telco.utils.sft.prepare_sft_data import normalize_record, prepare_sft_data
 
 
 def test_stage_registry_hierarchical():
@@ -158,3 +161,164 @@ def test_stage_validation():
     # Invalid config
     with pytest.raises(ValueError):
         stage.validate_config({})
+
+
+def test_workflow_runner_merges_multiple_base_configs(tmp_path):
+    """Test workflow config composition with scalar and list base layers."""
+    base_config = tmp_path / "base.yaml"
+    base_config.write_text(
+        """
+recipe: telco
+workflow:
+  name: sft
+  type: training
+cluster: test_cluster
+base_output_dir: /tmp/base-output
+data:
+  task_name: base_task
+  source_keys:
+    - source
+  target_keys:
+    - target
+pipeline_stages:
+  - prepare_sft_data
+  - training
+stages:
+  prepare_sft_data:
+    task_name: ${data.task_name}
+    source_keys: ${data.source_keys}
+    target_keys: ${data.target_keys}
+  training:
+    output_dir: ${base_output_dir}/training
+""",
+        encoding="utf-8",
+    )
+
+    task_config = tmp_path / "task.yaml"
+    task_config.write_text(
+        """
+_base_: base.yaml
+data:
+  task_name: ticket_summary
+  source_keys:
+    - ticket_text
+  target_keys:
+    - summary
+""",
+        encoding="utf-8",
+    )
+
+    model_config = tmp_path / "model.yaml"
+    model_config.write_text(
+        """
+stages:
+  training:
+    model_name: Example/Model
+    backend: fsdp
+    num_gpus: 8
+""",
+        encoding="utf-8",
+    )
+
+    child_config = tmp_path / "workflow.yaml"
+    child_config.write_text(
+        """
+_base_:
+  - task.yaml
+  - model.yaml
+base_output_dir: /tmp/run-output
+data:
+  task_name: ticket_resolution
+stages:
+  training:
+    num_gpus: 4
+""",
+        encoding="utf-8",
+    )
+
+    runner = WorkflowRunner(str(child_config))
+
+    assert runner.config["data"]["task_name"] == "ticket_resolution"
+    assert runner.config["stages"]["prepare_sft_data"]["task_name"] == "ticket_resolution"
+    assert runner.config["stages"]["prepare_sft_data"]["source_keys"] == ["ticket_text"]
+    assert runner.config["stages"]["training"]["model_name"] == "Example/Model"
+    assert runner.config["stages"]["training"]["backend"] == "fsdp"
+    assert runner.config["stages"]["training"]["num_gpus"] == 4
+    assert runner.config["stages"]["training"]["output_dir"] == "/tmp/run-output/training"
+
+
+def test_normalize_record_uses_configured_schema():
+    """Test generic SFT normalization with task-specific field names."""
+    normalized = normalize_record(
+        {
+            "ticket_text": "Base station alarm A123 is firing.",
+            "summary": "Investigate alarm A123.",
+            "ticket_id": "T-1",
+        },
+        split="train",
+        source_keys=["ticket_text", "problem"],
+        target_keys=["summary", "generation"],
+        task_name="ticket_summary",
+        metadata_keys=["ticket_id"],
+    )
+
+    assert normalized["problem"] == "Base station alarm A123 is firing."
+    assert normalized["generation"] == "Investigate alarm A123."
+    assert normalized["question_type"] == "ticket_summary"
+    assert normalized["task"] == "ticket_summary"
+    assert normalized["split"] == "train"
+    assert normalized["ticket_id"] == "T-1"
+    assert normalized["uuid"].startswith("train-")
+
+
+def test_prepare_sft_data_writes_normalized_outputs(tmp_path):
+    """Test generic SFT preparation writes train, val, chunks, and stats."""
+    train_file = tmp_path / "train.jsonl"
+    val_file = tmp_path / "val.jsonl"
+    output_dir = tmp_path / "out"
+
+    train_records = [
+        {"ticket_text": "Alarm A", "summary": "Handle A", "ticket_id": "T-1"},
+        {"ticket_text": "Alarm B", "summary": "Handle B", "ticket_id": "T-2"},
+    ]
+    val_records = [{"ticket_text": "Alarm C", "summary": "Handle C", "ticket_id": "T-3"}]
+
+    train_file.write_text(
+        "".join(json.dumps(record) + "\n" for record in train_records),
+        encoding="utf-8",
+    )
+    val_file.write_text(
+        "".join(json.dumps(record) + "\n" for record in val_records),
+        encoding="utf-8",
+    )
+
+    counts = prepare_sft_data(
+        train_file=train_file,
+        val_file=val_file,
+        output_dir=output_dir,
+        num_chunks=2,
+        source_keys=["ticket_text"],
+        target_keys=["summary"],
+        task_name="ticket_summary",
+        metadata_keys=["ticket_id"],
+    )
+
+    assert counts == {"train": 2, "val": 1, "test": 0}
+    assert (output_dir / "chunks" / "chunk_0.jsonl").exists()
+    assert (output_dir / "chunks" / "chunk_1.jsonl").exists()
+
+    train_output = [
+        json.loads(line) for line in (output_dir / "train.jsonl").read_text().splitlines()
+    ]
+    val_output = [
+        json.loads(line) for line in (output_dir / "val.jsonl").read_text().splitlines()
+    ]
+    stats_output = [
+        json.loads(line) for line in (output_dir / "stats.jsonl").read_text().splitlines()
+    ]
+
+    assert train_output[0]["problem"] == "Alarm A"
+    assert train_output[0]["generation"] == "Handle A"
+    assert train_output[0]["task"] == "ticket_summary"
+    assert val_output[0]["split"] == "val"
+    assert stats_output == [counts]

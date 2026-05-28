@@ -35,6 +35,12 @@ class WorkflowRunner:
           sft:
             num_nodes: 32
 
+    A workflow can also compose multiple bases. Bases are merged in order,
+    then the child config is applied:
+        _base_:
+          - tasks/cobol_to_text.yaml
+          - models/qwen3_30b_fsdp_lora.yaml
+
     Example:
         >>> runner = WorkflowRunner("nvflow/recipes/finance/workflows/sft.yaml")
         >>> runner.run()  # Run all stages
@@ -70,7 +76,9 @@ class WorkflowRunner:
         """Load config with _base_ inheritance support.
 
         If the config contains a _base_ key, recursively loads and merges
-        the base config. Child config values override base config values.
+        the base config. A list of bases is supported; later base configs
+        override earlier base configs, and child config values override all
+        bases.
 
         Args:
             config_path: Path to the config file
@@ -81,16 +89,36 @@ class WorkflowRunner:
         config = OmegaConf.load(config_path)
 
         if "_base_" in config:
-            # Resolve base path relative to current config file
-            base_path = (config_path.parent / config["_base_"]).resolve()
+            base_value = config["_base_"]
+            if isinstance(base_value, str):
+                base_entries = [base_value]
+            else:
+                base_entries = OmegaConf.to_container(base_value)
 
-            if not base_path.exists():
-                raise FileNotFoundError(
-                    f"Base config not found: {config['_base_']} (resolved to {base_path})"
+            if not isinstance(base_entries, list):
+                raise TypeError(
+                    f"_base_ in {config_path} must be a string or list of strings"
                 )
 
-            # Recursively load base config (supports chained inheritance)
-            base_config = self._load_config_with_inheritance(base_path)
+            base_configs = []
+            for base_entry in base_entries:
+                if not isinstance(base_entry, str):
+                    raise TypeError(
+                        f"_base_ entries in {config_path} must be strings"
+                    )
+
+                # Resolve base path relative to current config file
+                base_path = (config_path.parent / base_entry).resolve()
+
+                if not base_path.exists():
+                    raise FileNotFoundError(
+                        f"Base config not found: {base_entry} (resolved to {base_path})"
+                    )
+
+                # Recursively load base config (supports chained inheritance)
+                base_configs.append(self._load_config_with_inheritance(base_path))
+
+            base_config = OmegaConf.merge(*base_configs) if base_configs else OmegaConf.create()
 
             # Remove _base_ key before merging
             config = OmegaConf.to_container(config)

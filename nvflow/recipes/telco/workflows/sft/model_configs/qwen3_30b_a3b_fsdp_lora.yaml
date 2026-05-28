@@ -1,0 +1,97 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Model layer for Qwen3 30B A3B Instruct SFT.
+# Compose with a task config that supplies data paths, schema, and prompt.
+stages:
+  prepare_for_sft:
+    prepare_data_kwargs:
+      ctx_args: >-
+        ++tokenizer=/hf_models/Qwen/Qwen3-30B-A3B-Instruct-2507
+        ++prompt_config=${data.prompt_config}
+        ++chat_template_kwargs.enable_thinking=false
+
+  sequence_length_grouping:
+    tokenizer_path: /hf_models/Qwen/Qwen3-30B-A3B-Instruct-2507
+
+  training:
+    model_name: Qwen/Qwen3-30B-A3B-Instruct-2507
+    hf_checkpoint_path: /hf_models/Qwen/Qwen3-30B-A3B-Instruct-2507
+    backend: fsdp
+    num_nodes: 1
+    num_gpus: 8
+    dependent_jobs: 0
+    preset: "sft-base"
+    wandb_project: telco-cobol-training
+    wandb_mode: disabled
+    overrides:
+      sft:
+        max_num_epochs: 3
+        val_period: 50
+
+      checkpointing:
+        save_period: 100
+        keep_top_k: 3
+        checkpoint_must_save_by: "00:03:40:00"
+
+      data:
+        max_input_seq_length: ${stages.training.overrides.policy.max_total_sequence_length}
+        force_reprocess: false
+        num_workers: 4
+
+      policy:
+        train_global_batch_size: 16
+        train_micro_batch_size: 1
+        max_total_sequence_length: 4096
+        precision: "bfloat16"
+        max_grad_norm: 1.0
+
+        dtensor_cfg:
+          _v2: true
+          env_vars:
+            PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+            NCCL_DEBUG: "WARN"
+          cpu_offload: false
+          tensor_parallel_size: 1
+          context_parallel_size: 1
+          expert_parallel_size: 1
+          sequence_parallel: false
+          activation_checkpointing: true
+          custom_parallel_plan: null
+          lora_cfg:
+            enabled: true
+            target_modules: []
+            exclude_modules: []
+            match_all_linear: true
+            dim: 256
+            alpha: 512
+            dropout: 0.0
+            dropout_position: post
+            lora_A_init: xavier
+            use_triton: false
+
+        dynamic_batching:
+          enabled: false
+
+        sequence_packing:
+          enabled: false
+
+        optimizer:
+          kwargs:
+            lr: 5.0e-5
+            weight_decay: 0.1
+            betas: [0.9, 0.98]
+            eps: 1.0e-8
+            foreach: false
+            fused: false
