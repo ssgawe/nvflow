@@ -39,6 +39,9 @@ stages:
     preset: "sft-base"
     wandb_project: telco-cobol-training
     wandb_mode: disabled
+    stage_kwargs:
+      installation_command: >-
+        python /nemo_run/code/scripts/patch_nemo_peft_converter.py
 
     overrides:
       sft:
