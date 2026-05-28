@@ -19,6 +19,9 @@ export SLURM_UNBUFFEREDIO=1
 {%- for env_var in env_vars %}
 {{env_var}}
 {%- endfor %}
+export NEMO_RL_WAIT_FOR_FREE_GPUS=${NEMO_RL_WAIT_FOR_FREE_GPUS:-}
+export NEMO_RL_MAX_GPU_USED_MB=${NEMO_RL_MAX_GPU_USED_MB:-2000}
+export NEMO_RL_GPU_WAIT_POLL_SECONDS=${NEMO_RL_GPU_WAIT_POLL_SECONDS:-60}
 
 # Ports for all nodes (should be odd numbers since we place head/worker[0] on the same node) so all workers get the odd ports, but the head will get +1 the ports
 NODE_MANAGER_PORT=${NODE_MANAGER_PORT:-53001}
@@ -85,6 +88,28 @@ mkdir -p $CLUSTER_DIR/scripts
 
 export LOG_DIR={{ log_dir }}
 mkdir -p $LOG_DIR
+
+# Optional operational guard for nodes that still have GPU memory held by a
+# previous process when the allocation starts.
+if [[ "${NEMO_RL_WAIT_FOR_FREE_GPUS:-}" == "1" ]]; then
+  echo "Waiting for GPU memory usage to fall below ${NEMO_RL_MAX_GPU_USED_MB} MiB on every GPU..."
+  while true; do
+    mapfile -t gpu_used_mb < <(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
+    max_used_mb=0
+    for used_mb in "${gpu_used_mb[@]}"; do
+      used_mb="${used_mb//[[:space:]]/}"
+      if (( used_mb > max_used_mb )); then
+        max_used_mb="$used_mb"
+      fi
+    done
+    if (( max_used_mb <= NEMO_RL_MAX_GPU_USED_MB )); then
+      echo "GPU memory is available; max used memory is ${max_used_mb} MiB."
+      break
+    fi
+    echo "GPU memory still busy; max used memory is ${max_used_mb} MiB. Sleeping ${NEMO_RL_GPU_WAIT_POLL_SECONDS}s."
+    sleep "$NEMO_RL_GPU_WAIT_POLL_SECONDS"
+  done
+fi
 
 # Clean up any previous run files
 rm -f $LOG_DIR/STARTED_RAY_HEAD
@@ -250,6 +275,54 @@ log-sync-sidecar() {
 }
 log-sync-sidecar &
 
+# Patch Automodel checkpoint path classification before starting Ray head
+/opt/nemo_rl_venv/bin/python - <<'PY'
+from pathlib import Path
+
+path = Path("/opt/NeMo-RL/3rdparty/Automodel-workspace/Automodel/nemo_automodel/components/checkpoint/checkpointing.py")
+text = path.read_text()
+
+if "_is_model_checkpoint_path" not in text:
+    text = text.replace(
+        'def _is_geq_torch_2_9() -> bool:\n'
+        '    """\n'
+        '    Check if the current torch version is greater than or equal to 2.9.0.\n'
+        '    """\n'
+        '    return parse(torch.__version__).base_version >= "2.9.0"\n\n\n'
+        'if _is_geq_torch_2_9():',
+        'def _is_geq_torch_2_9() -> bool:\n'
+        '    """\n'
+        '    Check if the current torch version is greater than or equal to 2.9.0.\n'
+        '    """\n'
+        '    return parse(torch.__version__).base_version >= "2.9.0"\n\n\n'
+        'def _is_model_checkpoint_path(path: str | os.PathLike[str]) -> bool:\n'
+        '    return os.path.basename(os.path.normpath(os.fspath(path))) == "model"\n\n\n'
+        'if _is_geq_torch_2_9():',
+    )
+
+text = text.replace(
+    '        # Both model and optimizer saving is done in this function\n'
+    '        is_model = True if "/model" in path else False\n'
+    '        # PEFT loading is broadcasted from rank0 so it is a special case',
+    '        # Both model and optimizer loading is done in this function.\n'
+    '        is_model = _is_model_checkpoint_path(path)\n'
+    '        # PEFT loading is broadcasted from rank0 so it is a special case',
+)
+text = text.replace(
+    '        # Both model and optimizer saving is done in this function\n'
+    '        is_model = True if "/model" in path else False\n'
+    '        # PEFT saving is done on rank0 so it is a special case',
+    '        # Both model and optimizer saving is done in this function.\n'
+    '        is_model = _is_model_checkpoint_path(path)\n'
+    '        # PEFT saving is done on rank0 so it is a special case',
+)
+
+if 'is_model = True if "/model" in path else False' in text:
+    raise RuntimeError("failed to patch Automodel checkpoint path classification")
+
+path.write_text(text)
+PY
+
 # Patch nsight.py before starting Ray head
 sed -i 's/context\.py_executable = " "\.join(self\.nsight_cmd) + " python"/context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"/g' /opt/nemo_rl_venv/lib64/python*/site-packages/ray/_private/runtime_env/nsight.py
 
@@ -352,6 +425,54 @@ monitor-sidecar() {
   done
 }
 monitor-sidecar &
+
+# Patch Automodel checkpoint path classification before starting Ray worker
+/opt/nemo_rl_venv/bin/python - <<'PY'
+from pathlib import Path
+
+path = Path("/opt/NeMo-RL/3rdparty/Automodel-workspace/Automodel/nemo_automodel/components/checkpoint/checkpointing.py")
+text = path.read_text()
+
+if "_is_model_checkpoint_path" not in text:
+    text = text.replace(
+        'def _is_geq_torch_2_9() -> bool:\n'
+        '    """\n'
+        '    Check if the current torch version is greater than or equal to 2.9.0.\n'
+        '    """\n'
+        '    return parse(torch.__version__).base_version >= "2.9.0"\n\n\n'
+        'if _is_geq_torch_2_9():',
+        'def _is_geq_torch_2_9() -> bool:\n'
+        '    """\n'
+        '    Check if the current torch version is greater than or equal to 2.9.0.\n'
+        '    """\n'
+        '    return parse(torch.__version__).base_version >= "2.9.0"\n\n\n'
+        'def _is_model_checkpoint_path(path: str | os.PathLike[str]) -> bool:\n'
+        '    return os.path.basename(os.path.normpath(os.fspath(path))) == "model"\n\n\n'
+        'if _is_geq_torch_2_9():',
+    )
+
+text = text.replace(
+    '        # Both model and optimizer saving is done in this function\n'
+    '        is_model = True if "/model" in path else False\n'
+    '        # PEFT loading is broadcasted from rank0 so it is a special case',
+    '        # Both model and optimizer loading is done in this function.\n'
+    '        is_model = _is_model_checkpoint_path(path)\n'
+    '        # PEFT loading is broadcasted from rank0 so it is a special case',
+)
+text = text.replace(
+    '        # Both model and optimizer saving is done in this function\n'
+    '        is_model = True if "/model" in path else False\n'
+    '        # PEFT saving is done on rank0 so it is a special case',
+    '        # Both model and optimizer saving is done in this function.\n'
+    '        is_model = _is_model_checkpoint_path(path)\n'
+    '        # PEFT saving is done on rank0 so it is a special case',
+)
+
+if 'is_model = True if "/model" in path else False' in text:
+    raise RuntimeError("failed to patch Automodel checkpoint path classification")
+
+path.write_text(text)
+PY
 
 # Patch nsight.py before starting Ray worker
 sed -i 's/context\.py_executable = " "\.join(self\.nsight_cmd) + " python"/context.py_executable = " ".join(self.nsight_cmd) + f" {context.py_executable}"/g' /opt/nemo_rl_venv/lib64/python*/site-packages/ray/_private/runtime_env/nsight.py
